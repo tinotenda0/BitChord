@@ -306,6 +306,19 @@
                 android:resource="@xml/widget_media_pill" />
         </receiver>
 
+        <!-- Fork: the Surprise Me widget. Its button is its own PendingIntent, as above. -->
+        <receiver
+            android:name=".gateway.SurpriseMeWidget"
+            android:exported="false"
+            android:label="@string/surprise_me">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_surprise_me" />
+        </receiver>
+
         <!-- The transport buttons. Reached only by this app's own PendingIntents. -->
         <receiver
             android:name=".widget.MediaWidgetActions"

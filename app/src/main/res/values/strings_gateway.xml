@@ -16,4 +16,10 @@
     <string name="surprise_me">Surprise Me</string>
     <string name="surprise_me_subtitle">An endless mix from your gateway DJ</string>
     <string name="surprise_me_unavailable">Couldn\'t build a Surprise Me mix right now</string>
+    <string name="widget_surprise_description">Start an endless mix from your gateway DJ</string>
+    <string name="widget_surprise_idle">Tap for an endless mix</string>
+    <string name="widget_surprise_starting">Starting your mix…</string>
+    <string name="widget_surprise_failed">Couldn\'t start a mix</string>
+    <string name="widget_surprise_sign_in">Sign in to your gateway in BitChord</string>
+    <string name="widget_surprise_in_party">Not while you\'re listening together</string>
 </resources>
