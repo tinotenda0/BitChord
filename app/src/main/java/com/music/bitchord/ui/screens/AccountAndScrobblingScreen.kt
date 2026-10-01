@@ -96,7 +96,7 @@ fun AccountAndScrobblingScreen(
         }
 
         // Fork: the family gateway, which the Replay and Surprise Me read from.
-        GatewaySettingsGroup(onSignIn = onOpenGatewayLogin)
+        GatewaySettingsGroup(youtubeSignedIn = signedIn, onSignIn = onOpenGatewayLogin)
 
         SettingsGroup(
             header = stringResource(R.string.rich_presence),

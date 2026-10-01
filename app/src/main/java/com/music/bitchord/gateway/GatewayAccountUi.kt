@@ -9,6 +9,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Dns
+import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,6 +35,7 @@ import com.music.bitchord.ui.components.AlertRule
 import com.music.bitchord.ui.components.AlertScaffold
 import com.music.bitchord.ui.components.PillTextField
 import com.music.bitchord.ui.screens.DestructiveRow
+import com.music.bitchord.ui.screens.RowDivider
 import com.music.bitchord.ui.screens.SettingsGroup
 import com.music.bitchord.ui.screens.SettingsRow
 import dev.chrisbanes.haze.HazeState
@@ -41,8 +43,9 @@ import kotlinx.coroutines.launch
 
 /** The gateway's rows on the Account & integrations screen, in that screen's own style. */
 @Composable
-internal fun GatewaySettingsGroup(onSignIn: () -> Unit) {
+internal fun GatewaySettingsGroup(youtubeSignedIn: Boolean, onSignIn: () -> Unit) {
     val username by Gateway.username.collectAsStateWithLifecycle()
+    val move by PixelPlayerPlaylists.state.collectAsStateWithLifecycle()
     SettingsGroup(
         header = stringResource(R.string.gateway_header),
         footer = stringResource(R.string.gateway_footer),
@@ -57,12 +60,40 @@ internal fun GatewaySettingsGroup(onSignIn: () -> Unit) {
             },
             onClick = if (username.isEmpty()) onSignIn else null,
         )
+        if (username.isNotEmpty()) {
+            RowDivider()
+            SettingsRow(
+                icon = Icons.AutoMirrored.Rounded.PlaylistAdd,
+                title = stringResource(R.string.gateway_move_playlists),
+                subtitle = if (!youtubeSignedIn) {
+                    stringResource(R.string.gateway_move_needs_youtube)
+                } else when (val state = move) {
+                    is PixelPlayerPlaylists.State.Moving -> if (state.total == 0) {
+                        stringResource(R.string.gateway_move_starting)
+                    } else {
+                        stringResource(R.string.gateway_move_progress, state.done + 1, state.total)
+                    }
+                    is PixelPlayerPlaylists.State.Finished -> finishedText(state)
+                    is PixelPlayerPlaylists.State.Failed -> state.message
+                    PixelPlayerPlaylists.State.Idle -> stringResource(R.string.gateway_move_playlists_subtitle)
+                },
+                enabled = youtubeSignedIn && move !is PixelPlayerPlaylists.State.Moving,
+                onClick = PixelPlayerPlaylists::start,
+            )
+        }
     }
     if (username.isNotEmpty()) {
         SettingsGroup {
             DestructiveRow(label = stringResource(R.string.gateway_sign_out), onClick = Gateway::signOut)
         }
     }
+}
+
+@Composable
+private fun finishedText(state: PixelPlayerPlaylists.State.Finished): String = when {
+    state.moved == 0 && state.merged == 0 && state.failed == 0 -> stringResource(R.string.gateway_move_nothing)
+    state.failed > 0 -> stringResource(R.string.gateway_move_done_with_failures, state.moved + state.merged, state.failed)
+    else -> stringResource(R.string.gateway_move_done, state.moved + state.merged)
 }
 
 /** Username and password, checked against the gateway before anything is kept. Modelled on the Last.fm alert. */
