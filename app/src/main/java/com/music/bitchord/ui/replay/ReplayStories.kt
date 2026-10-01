@@ -742,7 +742,7 @@ private fun BigStat(value: String, label: String) {
 private fun ColumnScope.Recap(summary: ReplaySummary, headline: List<HeadlineRun>) {
     Headline(headline)
     Spacer(Modifier.height(20.dp))
-    RecapLine(stringResource(R.string.minutes), formatMinutes(summary.totalMs))
+    RecapLine(unitLabel(LocalContext.current), formatMinutes(summary.totalMs))
     summary.songs.firstOrNull()?.let { RecapLine(stringResource(R.string.top_song), it.song.title) }
     summary.artists.firstOrNull()?.let { RecapLine(stringResource(R.string.top_artist), it.title) }
     summary.albums.firstOrNull()?.let { RecapLine(stringResource(R.string.top_album), it.title) }

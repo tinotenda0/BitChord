@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fork: the listening stats widget in the picker. Two rows by three cells by
+  default; resizable both ways, down to what the figure and two lines need.
+  updatePeriodMillis is the system's floor of 30 minutes, as a backstop: the app
+  also redraws it whenever a listen is reported and when the unit changes.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_stats_description"
+    android:initialLayout="@layout/widget_stats"
+    android:minHeight="110dp"
+    android:minResizeHeight="90dp"
+    android:minResizeWidth="180dp"
+    android:minWidth="250dp"
+    android:previewLayout="@layout/widget_stats"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellHeight="2"
+    android:targetCellWidth="3"
+    android:updatePeriodMillis="1800000"
+    android:widgetCategory="home_screen" />

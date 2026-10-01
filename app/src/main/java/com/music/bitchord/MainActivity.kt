@@ -1955,7 +1955,8 @@ private fun BitChordApp(
     val replayOpen = showReplay || replayStory != null || showReplayShare ||
         (selectedTab == TAB_LIBRARY && detail == null && !showSettings)
     val (replay, setReplayPeriod) = rememberReplayState(replayOpen)
-    val replayCards = remember(replay.summary) {
+    val replayUnit by com.music.bitchord.ui.replay.ReplayUnits.unit.collectAsStateWithLifecycle()
+    val replayCards = remember(replay.summary, replayUnit) {
         replay.summary?.takeUnless { it.isEmpty }?.cards(context).orEmpty()
     }
 

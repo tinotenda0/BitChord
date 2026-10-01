@@ -1,5 +1,7 @@
 package com.music.bitchord.ui.replay
 
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -109,6 +111,8 @@ fun ReplayScreen(
 ) {
     val context = LocalContext.current
     val summary = state.summary
+    // Fork: read here so the charts below re-format when minutes/hours changes.
+    val unit by ReplayUnits.unit.collectAsStateWithLifecycle()
     val leadArtwork = summary?.songs?.firstOrNull()?.song?.thumbnailUrl
     val palette = rememberArtworkColors(leadArtwork)
     val topSongs = stringResource(R.string.top_songs)
@@ -171,7 +175,7 @@ fun ReplayScreen(
                 }
                 summary == null || summary.isEmpty -> item("empty") { EmptyReplay(state.period, dark) }
                 else -> {
-                    item("cards") {
+                    item("cards-$unit") {
                         ReplayCardRow(
                             cards = summary.cards(context),
                             holder = holder,
@@ -233,7 +237,7 @@ fun ReplayScreen(
                         }
                     }
 
-                    item("habits") { Habits(summary, dark) }
+                    item("habits-$unit") { Habits(summary, dark) }
                     item("share") {
                         ReplayActionRow(
                             Icons.Rounded.IosShare,
@@ -269,7 +273,13 @@ private fun Heading(state: ReplayState, onPeriodChange: (ReplayPeriod) -> Unit, 
             color = textColor.copy(alpha = 0.6f),
         )
         Spacer(Modifier.height(14.dp))
-        PeriodPicker(state.period, onPeriodChange, dark)
+        // Fork: the period on the left, minutes-or-hours on the right.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            PeriodPicker(state.period, onPeriodChange, dark)
+            Spacer(Modifier.weight(1f))
+            val unit by ReplayUnits.unit.collectAsStateWithLifecycle()
+            UnitPicker(unit, ReplayUnits::set, dark)
+        }
         Spacer(Modifier.height(18.dp))
     }
 }
@@ -310,6 +320,41 @@ private fun PeriodPicker(selected: ReplayPeriod, onSelect: (ReplayPeriod) -> Uni
                     .background(background)
                     .clickable { onSelect(period) }
                     .padding(horizontal = 14.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
+
+/** Fork: minutes or hours, in the period picker's own style. See [ReplayUnits]. */
+@Composable
+private fun UnitPicker(selected: ReplayUnits.Unit, onSelect: (ReplayUnits.Unit) -> Unit, dark: Boolean) {
+    val textColor = if (dark) Color.White else Color.Black
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(textColor.copy(alpha = 0.10f))
+            .padding(3.dp),
+        horizontalArrangement = Arrangement.spacedBy(2.dp),
+    ) {
+        ReplayUnits.Unit.entries.forEach { unit ->
+            val active = unit == selected
+            val background by animateColorAsState(
+                if (active) textColor.copy(alpha = 0.92f) else Color.Transparent,
+                tween(160),
+                label = "unitChip",
+            )
+            Text(
+                text = stringResource(
+                    if (unit == ReplayUnits.Unit.HOURS) R.string.replay_unit_hours else R.string.replay_unit_minutes,
+                ),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.W700,
+                color = if (active) if (dark) Color.Black else Color.White else textColor.copy(alpha = 0.75f),
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(background)
+                    .clickable { onSelect(unit) }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
     }

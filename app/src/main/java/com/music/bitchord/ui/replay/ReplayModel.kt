@@ -125,7 +125,8 @@ fun ReplaySummary.storyHeadline(context: Context, page: ReplayStoryPage): List<H
     ReplayStoryPage.MINUTES -> runs(
         context.getString(R.string.replay_minutes_start) to false,
         " " to false,
-        context.getString(R.string.replay_minutes_value, formatMinutes(totalMs)) to true,
+        // Fork: carries its unit, since the figure can now be either.
+        "${formatMinutes(totalMs)} ${unitLabel(context).lowercase(Locale.getDefault())}" to true,
         " " to false,
         context.getString(R.string.replay_minutes_end) to false,
     )
@@ -259,15 +260,40 @@ enum class ReplayStoryPage {
  */
 fun formatListening(context: Context, ms: Long): String {
     val minutes = ms / 60_000
+    // Fork: in the listener's chosen unit — see [ReplayUnits]. Under an hour stays
+    // in minutes either way: "0.3 hr" reads as a measurement, "18 min" as a song.
     return when {
         minutes < 60 -> context.getString(R.string.minutes_short, minutes)
-        minutes < 1_440 -> context.getString(R.string.hours_minutes_short, minutes / 60, minutes % 60)
+        ReplayUnits.current == ReplayUnits.Unit.HOURS ->
+            context.getString(R.string.hours_decimal_short, hoursFigure(ms))
         else -> context.getString(R.string.minutes_grouped_short, grouped(minutes))
     }
 }
 
-/** The headline figure on the minutes card: always minutes, always grouped. */
-fun formatMinutes(ms: Long): String = grouped(ms / 60_000)
+/**
+ * The headline figure on the minutes card, grouped, in the chosen unit (fork; upstream
+ * was always minutes). Pair it with [listenedLabel] or [unitLabel], which follow the
+ * same choice.
+ */
+fun formatMinutes(ms: Long): String =
+    if (ReplayUnits.current == ReplayUnits.Unit.HOURS) hoursFigure(ms) else grouped(ms / 60_000)
+
+/** Hours with a decimal while it still says something ("4.5"), whole and grouped after ("1,284"). */
+private fun hoursFigure(ms: Long): String {
+    val hours = ms / 3_600_000.0
+    return if (hours < 10) String.format(Locale.US, "%.1f", hours).removeSuffix(".0")
+    else grouped(hours.toLong())
+}
+
+/** "Minutes listened" / "Hours listened", to go with [formatMinutes]. */
+fun listenedLabel(context: Context): String = context.getString(
+    if (ReplayUnits.current == ReplayUnits.Unit.HOURS) R.string.hours_listened else R.string.minutes_listened,
+)
+
+/** "Minutes" / "Hours", to go with [formatMinutes]. */
+fun unitLabel(context: Context): String = context.getString(
+    if (ReplayUnits.current == ReplayUnits.Unit.HOURS) R.string.hours else R.string.minutes,
+)
 
 fun grouped(value: Long): String = String.format(Locale.US, "%,d", value)
 
@@ -391,7 +417,7 @@ data class ReplayHeroCard(
 fun ReplaySummary.cards(context: Context): List<ReplayHeroCard> = buildList {
     add(
         ReplayHeroCard(
-            label = context.getString(R.string.minutes_listened),
+            label = listenedLabel(context),
             value = formatMinutes(totalMs),
             detail = "${context.replayCount(totalPlays, R.plurals.replay_play_count)} · " +
                 localizedLabel(context),

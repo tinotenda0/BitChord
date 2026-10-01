@@ -106,6 +106,7 @@ class BitChordApplication : Application(), SingletonImageLoader.Factory {
         com.music.bitchord.gateway.GatewayListening.init(this)
         com.music.bitchord.gateway.GatewayStats.init(this)
         com.music.bitchord.gateway.PixelPlayerPlaylists.init(this)
+        com.music.bitchord.ui.replay.ReplayUnits.init(this)
         // After AppSettings, whose switch decides whether half of it runs.
         ArtistFacts.init(this)
         // One cache directory can only be opened once per process, and

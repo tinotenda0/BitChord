@@ -30,6 +30,17 @@
     <string name="gateway_move_nothing">Nothing left to bring over</string>
     <string name="gateway_move_done">Brought over %1$d playlists</string>
     <string name="gateway_move_done_with_failures">Brought over %1$d, %2$d couldn\'t be moved. Tap to try again</string>
+    <string name="hours">Hours</string>
+    <string name="hours_listened">Hours listened</string>
+    <string name="hours_decimal_short">%1$s hr</string>
+    <string name="replay_unit_minutes">Min</string>
+    <string name="replay_unit_hours">Hrs</string>
+    <string name="widget_stats_label">Listening stats</string>
+    <string name="widget_stats_description">This month\'s listening, top artist and top song</string>
+    <string name="widget_stats_this_month">This month</string>
+    <string name="widget_stats_top_artist">Top artist · %1$s</string>
+    <string name="widget_stats_top_song">Top song · %1$s</string>
+    <string name="widget_stats_nothing_yet">Nothing played yet this month</string>
     <string name="share_lyrics">Share lyrics</string>
     <string name="share_lyrics_description">Pick up to %1$d lines for the card.</string>
     <string name="share_lyrics_pick">Pick a line</string>

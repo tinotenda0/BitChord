@@ -319,6 +319,19 @@
                 android:resource="@xml/widget_surprise_me" />
         </receiver>
 
+        <!-- Fork: the listening stats widget. Opens the app; nothing else reaches it. -->
+        <receiver
+            android:name=".gateway.ListeningStatsWidget"
+            android:exported="false"
+            android:label="@string/widget_stats_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_stats" />
+        </receiver>
+
         <!-- The transport buttons. Reached only by this app's own PendingIntents. -->
         <receiver
             android:name=".widget.MediaWidgetActions"

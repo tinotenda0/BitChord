@@ -90,7 +90,11 @@ object GatewayListening {
     /** Events not yet confirmed by the gateway, so the Replay can count them already. */
     val pending: StateFlow<List<ListeningEvent>> = _pending.asStateFlow()
 
+    /** For redrawing the stats widget once a listen is in. */
+    private lateinit var appContext: Context
+
     fun init(context: Context) {
+        appContext = context.applicationContext
         outboxFile = File(context.filesDir, OUTBOX_FILE)
         sessionFile = File(context.filesDir, SESSION_FILE)
         // A stretch left paused by a process that has since died will never be
@@ -175,6 +179,7 @@ object GatewayListening {
         )
         scope.launch {
             outboxLock.withLock { writeOutbox(readOutbox() + event) }
+            ListeningStatsWidget.refresh(appContext)
             drain()
         }
     }
@@ -204,6 +209,7 @@ object GatewayListening {
                 if (sent.isNotEmpty()) {
                     outboxLock.withLock { writeOutbox(readOutbox().filterNot { it.eventId in sent }) }
                     GatewayStats.invalidate()
+                    ListeningStatsWidget.refresh(appContext)
                 }
             } finally {
                 drainLock.unlock()

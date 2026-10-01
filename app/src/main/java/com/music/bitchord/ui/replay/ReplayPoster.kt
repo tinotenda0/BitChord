@@ -247,7 +247,7 @@ private fun drawRecap(canvas: Canvas, context: Context, type: Fonts, summary: Re
         canvas.drawText(ellipsised(value, v, CONTENT_W - 320f), MARGIN + 320f, y, v)
         y += 96f
     }
-    line(context.getString(R.string.minutes), formatMinutes(summary.totalMs))
+    line(unitLabel(context), formatMinutes(summary.totalMs))
     summary.songs.firstOrNull()?.let { line(context.getString(R.string.top_song), it.song.title) }
     summary.artists.firstOrNull()?.let { line(context.getString(R.string.top_artist), it.title) }
     summary.albums.firstOrNull()?.let { line(context.getString(R.string.top_album), it.title) }
@@ -424,7 +424,7 @@ private fun drawTotals(
         type.heading(148f, Color.WHITE),
     )
     canvas.drawText(
-        context.getString(R.string.minutes_listened).uppercase(context.resources.configuration.locales[0]),
+        listenedLabel(context).uppercase(context.resources.configuration.locales[0]),
         MARGIN,
         top + 176f,
         type.label(30f, 0xB3FFFFFF.toInt(), tracking = 0.14f),
