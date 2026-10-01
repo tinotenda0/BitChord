@@ -480,6 +480,7 @@ private fun BitChordApp(
     var showAccountSelector by remember { mutableStateOf(false) }
     var showListenBrainzLogin by remember { mutableStateOf(false) }
     var showLastfmLogin by remember { mutableStateOf(false) }
+    var showGatewayLogin by remember { mutableStateOf(false) }
     var showWebDavEditor by remember { mutableStateOf(false) }
     var showSmbEditor by remember { mutableStateOf(false) }
     /**
@@ -2272,6 +2273,7 @@ private fun BitChordApp(
         BackHandler(enabled = showUpdateDialog) { showUpdateDialog = false }
         BackHandler(enabled = showListenBrainzLogin) { showListenBrainzLogin = false }
         BackHandler(enabled = showLastfmLogin) { showLastfmLogin = false }
+        BackHandler(enabled = showGatewayLogin) { showGatewayLogin = false }
         BackHandler(enabled = discordDialog != null) { discordDialog = null }
         BackHandler(enabled = editingSource != null) { editingSource = null }
         BackHandler(enabled = editingPartyServer) { editingPartyServer = false }
@@ -2473,6 +2475,7 @@ private fun BitChordApp(
                             onOpenListenBrainzLogin = { showListenBrainzLogin = true },
                             onOpenLastfmLogin = { showLastfmLogin = true },
                             onOpenDiscord = { showDiscord = true },
+                            onOpenGatewayLogin = { showGatewayLogin = true },
                             contentPadding = listPadding,
                         )
                     } else if (key == "sources") {
@@ -4105,6 +4108,13 @@ private fun BitChordApp(
                     showListenBrainzLogin = false
                 },
                 onDismiss = { showListenBrainzLogin = false },
+            )
+        }
+
+        if (showGatewayLogin) {
+            com.music.bitchord.gateway.GatewayLoginAlert(
+                hazeState = hazeState,
+                onDismiss = { showGatewayLogin = false },
             )
         }
 

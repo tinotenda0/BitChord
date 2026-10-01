@@ -41,6 +41,9 @@ class BitChordApplication : Application(), SingletonImageLoader.Factory {
         // PlaybackService shares this process, so seeding the cookie here means
         // stream resolution is authenticated from the first play onwards.
         authStore = AuthStore(this)
+        // Fork: the family gateway's credentials. Its own encrypted store, opened
+        // here on the main thread after AuthStore for the master-key reason below.
+        com.music.bitchord.gateway.Gateway.init(this)
         // Opened off the main thread, alongside everything below: none of these
         // reads a setting or the session, and between them they are the slowest
         // opens at startup — SourceRegistry's encrypted store most of all.
@@ -99,6 +102,9 @@ class BitChordApplication : Application(), SingletonImageLoader.Factory {
         // PlaybackService because the Replay page reads it from the UI side and
         // both live in this process — one owner, one directory.
         ListeningStats.init(this)
+        // Fork: listening reported to, and the Replay drawn from, the gateway.
+        com.music.bitchord.gateway.GatewayListening.init(this)
+        com.music.bitchord.gateway.GatewayStats.init(this)
         // After AppSettings, whose switch decides whether half of it runs.
         ArtistFacts.init(this)
         // One cache directory can only be opened once per process, and

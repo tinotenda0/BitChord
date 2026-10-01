@@ -29,6 +29,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.bitchord.R
 import com.music.bitchord.data.model.Account
 import com.music.bitchord.data.settings.AppSettings
+import com.music.bitchord.gateway.GatewaySettingsGroup
 import kotlin.math.roundToInt
 
 @Composable
@@ -42,6 +43,7 @@ fun AccountAndScrobblingScreen(
     onOpenListenBrainzLogin: () -> Unit,
     onOpenLastfmLogin: () -> Unit,
     onOpenDiscord: () -> Unit,
+    onOpenGatewayLogin: () -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -92,6 +94,9 @@ fun AccountAndScrobblingScreen(
                 DestructiveRow(label = stringResource(R.string.sign_out), onClick = onSignOut)
             }
         }
+
+        // Fork: the family gateway, which the Replay and Surprise Me read from.
+        GatewaySettingsGroup(onSignIn = onOpenGatewayLogin)
 
         SettingsGroup(
             header = stringResource(R.string.rich_presence),

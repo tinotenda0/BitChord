@@ -304,6 +304,17 @@ object ListeningStats {
         }
     }
 
+    /**
+     * A Replay built from months supplied by the caller rather than read off
+     * disk. Fork: the gateway's listening log is folded into [StoredBucket]s and
+     * summarised here, so it is charted exactly as this device's own history is.
+     */
+    fun summaryOf(buckets: List<StoredBucket>, period: ReplayPeriod, today: LocalDate): ReplaySummary {
+        val merged = MergedBucket()
+        buckets.forEach(merged::add)
+        return merged.toSummary(period, today)
+    }
+
     /** Every month with a file, oldest first. */
     fun months(): List<YearMonth> {
         if (!ready) return emptyList()

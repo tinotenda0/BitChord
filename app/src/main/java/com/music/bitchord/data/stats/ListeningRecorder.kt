@@ -3,6 +3,7 @@ package com.music.bitchord.data.stats
 import com.music.bitchord.data.YtMusicRepository
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.durationMillis
+import com.music.bitchord.gateway.GatewayListening
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -58,6 +59,8 @@ object ListeningRecorder {
      */
     @Synchronized
     fun onSample(song: Song, durationMs: Long) {
+        // Fork: the same ticks feed the gateway's listening log.
+        GatewayListening.onSample(enriched(song), durationMs)
         val now = System.currentTimeMillis()
         if (song.videoId != currentId) {
             // A new track anchors the clock and contributes nothing yet — see
@@ -99,6 +102,7 @@ object ListeningRecorder {
      */
     @Synchronized
     fun onStopped() {
+        GatewayListening.onStopped()
         currentId = null
         playedThisTrack = 0L
         playCounted = false

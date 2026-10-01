@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Fork-only strings for the family gateway. Kept out of strings.xml so upstream's
+    translation check (LocaleStringsTest) doesn't demand them in every language;
+    they fall back to English everywhere.
+-->
+<resources>
+    <string name="gateway">Gateway</string>
+    <string name="gateway_header">PixelPlayer gateway</string>
+    <string name="gateway_footer">Your listening history, Replay and Surprise Me come from your gateway account, so they carry on from PixelPlayer.</string>
+    <string name="gateway_tap_to_sign_in">Tap to sign in</string>
+    <string name="gateway_signed_in_as">Signed in as %1$s</string>
+    <string name="gateway_sign_out">Sign out of gateway</string>
+    <string name="gateway_login">Sign in to your gateway</string>
+    <string name="gateway_login_description">Use the same username and password as PixelPlayer.</string>
+</resources>
