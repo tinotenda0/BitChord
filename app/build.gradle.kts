@@ -81,7 +81,9 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 22
-        versionName = "1.7"
+        // Fork: CI stamps the version a build is published under (e.g. "1.7-20261001-dc2292f0")
+        // so the in-app update check can tell which release it is — see AppUpdateChecker.
+        versionName = providers.gradleProperty("bitchord.version").orNull ?: "1.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
