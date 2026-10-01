@@ -110,6 +110,8 @@ fun HomeScreen(
     onLoadMore: (() -> Unit)? = null,
     loadingMore: Boolean = false,
     recentlyPlayedLoading: Boolean = false,
+    /** Fork: drawn under the title, ahead of the feed — the Surprise Me card. */
+    header: (@Composable () -> Unit)? = null,
 ) {
     val recentsViewType by AppSettings.homeRecentsViewType.collectAsStateWithLifecycle()
 
@@ -136,6 +138,9 @@ fun HomeScreen(
                 item {
                     SignInBanner(onSignIn = onSignIn, modifier = Modifier.padding(bottom = 8.dp))
                 }
+            }
+            if (header != null) {
+                item { header() }
             }
             when (state) {
                 is UiState.Loading -> {

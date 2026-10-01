@@ -145,9 +145,15 @@ object Gateway {
 
     fun songId(videoId: String): String = SONG_PREFIX + videoId
 
-    /** The video id behind a gateway song id, or null for anything else. */
+    /**
+     * The video id behind a gateway song id, or null for anything else — artist
+     * and album ids share the `yt-` prefix (`yt-artist-…`), so the remainder has
+     * to be a real 11-character video id, the same test the gateway applies.
+     */
     fun videoId(songId: String): String? =
-        songId.takeIf { it.startsWith(SONG_PREFIX) }?.removePrefix(SONG_PREFIX)?.takeIf { it.isNotBlank() }
+        songId.takeIf { it.startsWith(SONG_PREFIX) }?.removePrefix(SONG_PREFIX)?.takeIf { VIDEO_ID.matches(it) }
+
+    private val VIDEO_ID = Regex("[A-Za-z0-9_-]{11}")
 
     private const val KEY_USERNAME = "username"
     private const val KEY_PASSWORD = "password"

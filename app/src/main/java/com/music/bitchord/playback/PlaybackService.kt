@@ -2274,7 +2274,7 @@ class PlaybackService : MediaLibraryService() {
     private fun loadAutoplayForCurrentTrack() {
         val exoPlayer = player ?: return
         val party = ListenTogether.state.value
-        if (!autoplayEnabled(party) ||
+        if (!topUpEnabled(party) ||
             exoPlayer.repeatMode == Player.REPEAT_MODE_ALL ||
             (party.inParty && autoplaySupplierId(party) != party.you?.memberId)
         ) {
@@ -2294,7 +2294,7 @@ class PlaybackService : MediaLibraryService() {
             while (isActive) {
                 val activePlayer = player ?: return@launch
                 val activeParty = ListenTogether.state.value
-                if (!autoplayEnabled(activeParty) ||
+                if (!topUpEnabled(activeParty) ||
                     activePlayer.repeatMode == Player.REPEAT_MODE_ALL ||
                     activePlayer.currentMediaItem?.mediaId != current.videoId ||
                     (activeParty.inParty && autoplaySupplierId(activeParty) != activeParty.you?.memberId)
@@ -2319,7 +2319,7 @@ class PlaybackService : MediaLibraryService() {
                 }
                 val latestPlayer = player ?: return@launch
                 val latestParty = ListenTogether.state.value
-                if (!autoplayEnabled(latestParty) ||
+                if (!topUpEnabled(latestParty) ||
                     latestPlayer.repeatMode == Player.REPEAT_MODE_ALL ||
                     latestPlayer.currentMediaItem?.mediaId != current.videoId ||
                     (latestParty.inParty && autoplaySupplierId(latestParty) != latestParty.you?.memberId)
@@ -2404,6 +2404,15 @@ class PlaybackService : MediaLibraryService() {
     /** @see autoplayEnabledFor — shared with the player, which draws the toggle. */
     private fun autoplayEnabled(party: ListenTogether.State): Boolean =
         autoplayEnabledFor(party, AppSettings.autoplay.value)
+
+    /**
+     * Whether the queue should be topped up: AutoPlay's own setting, or — fork —
+     * a Surprise Me queue, which always continues outside a party, as it did in
+     * PixelPlayer.
+     */
+    private fun topUpEnabled(party: ListenTogether.State): Boolean =
+        autoplayEnabled(party) ||
+            (!party.inParty && com.music.bitchord.gateway.SurpriseMe.isSurpriseMe(player?.currentMediaItem?.toSong()))
 
     /**
      * Takes back what AutoPlay queued and hasn't played yet — what switching

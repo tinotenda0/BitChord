@@ -8,6 +8,7 @@ import com.music.bitchord.data.model.QueueTier
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.sources.SourceRegistry
 import com.music.bitchord.data.sources.TrackMatcher
+import com.music.bitchord.gateway.SurpriseMe
 import com.music.bitchord.playback.QueueCoordinator.asQueueEntry
 import kotlinx.coroutines.CancellationException
 
@@ -101,6 +102,8 @@ suspend fun loadAutoplayTracks(
     seedSong: Song,
     limit: Int = MAX_QUEUED_AUTOPLAY,
 ): Result<List<Song>> {
+    // Fork: a Surprise Me queue is topped up by the gateway's DJ, not by radio.
+    if (SurpriseMe.isSurpriseMe(seedSong)) return SurpriseMe.continuation(existing, limit)
     val seed = youtubeSeedFor(seedSong) ?: return Result.success(emptyList())
     val related = YtMusicRepository.radio(seed).getOrElse { return Result.failure(it) }
     val extra = QueueBuilder.extend(existing, related, limit)

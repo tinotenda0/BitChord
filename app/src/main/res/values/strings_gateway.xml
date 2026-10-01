@@ -13,4 +13,7 @@
     <string name="gateway_sign_out">Sign out of gateway</string>
     <string name="gateway_login">Sign in to your gateway</string>
     <string name="gateway_login_description">Use the same username and password as PixelPlayer.</string>
+    <string name="surprise_me">Surprise Me</string>
+    <string name="surprise_me_subtitle">An endless mix from your gateway DJ</string>
+    <string name="surprise_me_unavailable">Couldn\'t build a Surprise Me mix right now</string>
 </resources>

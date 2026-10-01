@@ -1155,6 +1155,24 @@ private fun BitChordApp(
     // collection action fetched before this callback). The explicit wrappers
     // below are preferred because a track's album is not necessarily where it
     // was played from.
+    // Fork: the gateway DJ's endless queue — see [com.music.bitchord.gateway.SurpriseMe].
+    // The batch is fetched before the player is touched, so a failure leaves
+    // whatever is playing alone.
+    var surpriseMeLoading by remember { mutableStateOf(false) }
+    val startSurpriseMe: () -> Unit = {
+        if (!surpriseMeLoading) {
+            surpriseMeLoading = true
+            scope.launch {
+                val songs = com.music.bitchord.gateway.SurpriseMe.batch().getOrNull().orEmpty()
+                surpriseMeLoading = false
+                if (songs.isEmpty()) {
+                    Toast.makeText(context, R.string.surprise_me_unavailable, Toast.LENGTH_SHORT).show()
+                } else {
+                    playFrom(songs, 0, com.music.bitchord.gateway.SurpriseMe.source)
+                }
+            }
+        }
+    }
     val play: (List<Song>, Int) -> Unit = { songs, index ->
         val first = songs.getOrNull(index)
         val source = QueueSource(
@@ -2741,6 +2759,12 @@ private fun BitChordApp(
                             onLoadMore = viewModel::loadMoreHome,
                             loadingMore = homeLoadingMore,
                             recentlyPlayedLoading = homeRecentlyPlayedLoading,
+                            header = {
+                                com.music.bitchord.gateway.SurpriseMeCard(
+                                    loading = surpriseMeLoading,
+                                    onClick = startSurpriseMe,
+                                )
+                            },
                         )
                         TAB_EXPLORE -> selectedMoodGenre?.let { category ->
                             MoodGenrePlaylistsScreen(
