@@ -6,6 +6,9 @@ import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.os.Build
+import android.os.Bundle
+import android.util.SizeF
 import android.widget.RemoteViews
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -37,7 +40,12 @@ import kotlinx.coroutines.withTimeoutOrNull
 class SurpriseMeWidget : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        for (id in ids) manager.updateAppWidget(id, views(context, R.string.widget_surprise_idle))
+        for (id in ids) manager.updateAppWidget(id, views(context, manager, id, R.string.widget_surprise_idle))
+    }
+
+    /** Below Android 12 the layout is chosen here, from the size it was resized to. */
+    override fun onAppWidgetOptionsChanged(context: Context, manager: AppWidgetManager, id: Int, newOptions: Bundle?) {
+        manager.updateAppWidget(id, views(context, manager, id, R.string.widget_surprise_idle))
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -102,22 +110,49 @@ class SurpriseMeWidget : AppWidgetProvider() {
             val ids = runCatching {
                 manager.getAppWidgetIds(ComponentName(context, SurpriseMeWidget::class.java))
             }.getOrNull() ?: return
-            for (id in ids) manager.updateAppWidget(id, views(context, status))
+            for (id in ids) manager.updateAppWidget(id, views(context, manager, id, status))
         }
 
-        private fun views(context: Context, status: Int): RemoteViews =
+        /**
+         * Both shapes of the widget: the capsule with its status line, and — at one
+         * cell — the sparkle alone. Android 12 and up is handed both and picks by the
+         * size the widget is actually at, resizing included; below that, the size is
+         * read from the widget's options.
+         */
+        private fun views(context: Context, manager: AppWidgetManager, id: Int, status: Int): RemoteViews {
+            val wide = capsule(context, status)
+            val small = tile(context, status)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                return RemoteViews(mapOf(SizeF(40f, 40f) to small, SizeF(CAPSULE_MIN_DP, 40f) to wide))
+            }
+            val widthDp = runCatching { manager.getAppWidgetOptions(id) }.getOrNull()
+                ?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH)?.takeIf { it > 0 }
+            return if (widthDp != null && widthDp < CAPSULE_MIN_DP) small else wide
+        }
+
+        private fun capsule(context: Context, status: Int) =
             RemoteViews(context.packageName, R.layout.widget_surprise_me).apply {
                 setTextViewText(R.id.widget_surprise_status, context.getString(status))
-                val intent = Intent(context, SurpriseMeWidget::class.java).setAction(ACTION_START)
-                setOnClickPendingIntent(
-                    R.id.widget_surprise,
-                    PendingIntent.getBroadcast(
-                        context,
-                        0,
-                        intent,
-                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-                    ),
-                )
+                setOnClickPendingIntent(R.id.widget_surprise, start(context))
             }
+
+        /** No line to say what is happening in, so the sparkle dims while a mix starts. */
+        private fun tile(context: Context, status: Int) =
+            RemoteViews(context.packageName, R.layout.widget_surprise_me_small).apply {
+                val busy = status == R.string.widget_surprise_starting
+                setInt(R.id.widget_surprise_icon, "setImageAlpha", if (busy) 110 else 255)
+                setContentDescription(R.id.widget_surprise, context.getString(status))
+                setOnClickPendingIntent(R.id.widget_surprise, start(context))
+            }
+
+        private fun start(context: Context): PendingIntent = PendingIntent.getBroadcast(
+            context,
+            0,
+            Intent(context, SurpriseMeWidget::class.java).setAction(ACTION_START),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        /** Narrower than this, the capsule's two lines don't fit and the tile takes over. */
+        private const val CAPSULE_MIN_DP = 110f
     }
 }

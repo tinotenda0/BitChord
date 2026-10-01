@@ -85,10 +85,15 @@ object GatewayStats {
     suspend fun replaySummary(period: ReplayPeriod): ReplaySummary =
         if (Gateway.signedIn) summary(period) else ListeningStats.summary(period)
 
-    /** The first month anything was listened to, for the Replay's "member since". */
+    /**
+     * The Replay's "member since": when signed in, the month the gateway account was made;
+     * failing that, the first month anything was listened to.
+     */
     suspend fun replayFirstMonth(): YearMonth? =
         if (Gateway.signedIn) {
-            allEvents().minOfOrNull { it.startTime }?.let { YearMonth.from(local(it)) }
+            val since = runCatching { Gateway.memberSince() }.getOrNull()
+                ?: allEvents().minOfOrNull { it.startTime }
+            since?.let { YearMonth.from(local(it)) }
         } else {
             withContext(Dispatchers.IO) { ListeningStats.months().firstOrNull() }
         }

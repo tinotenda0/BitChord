@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fork: the Surprise Me widget at 1×1. The capsule's colours on a rounded square,
+  diagonal so all three show in a square, at the launcher's own widget radius.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <corners android:radius="@dimen/widget_corner_radius" />
+    <gradient
+        android:angle="315"
+        android:centerColor="#FF8E54E9"
+        android:endColor="#FF4776E6"
+        android:startColor="#FFFF5E62" />
+</shape>

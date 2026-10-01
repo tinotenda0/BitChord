@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fork: the Surprise Me widget collapsed to one cell — just the sparkle on the
+  capsule's colours. There is no room for the status line here, so the sparkle
+  dims while a mix is starting instead (see SurpriseMeWidget). Square and centred
+  in the cell, whatever shape the launcher's cell actually is.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <FrameLayout
+        android:id="@+id/widget_surprise"
+        android:layout_width="56dp"
+        android:layout_height="56dp"
+        android:layout_gravity="center"
+        android:background="@drawable/widget_surprise_tile"
+        android:contentDescription="@string/surprise_me">
+
+        <ImageView
+            android:id="@+id/widget_surprise_icon"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_gravity="center"
+            android:importantForAccessibility="no"
+            android:src="@drawable/ic_widget_surprise" />
+    </FrameLayout>
+</FrameLayout>

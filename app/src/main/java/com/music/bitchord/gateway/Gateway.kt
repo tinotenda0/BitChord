@@ -13,6 +13,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
@@ -140,6 +141,22 @@ object Gateway {
         MessageDigest.getInstance("MD5").digest(input.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
 
+    /**
+     * When the signed-in gateway account was made (epoch ms), for "member since". Asked
+     * once per account and kept, since it never changes; null when the gateway has no
+     * date for it, or is too old to say.
+     */
+    suspend fun memberSince(): Long? {
+        val user = _username.value.ifEmpty { return null }
+        val key = KEY_MEMBER_SINCE + user.lowercase()
+        prefs.getLong(key, 0L).takeIf { it > 0 }?.let { return it }
+        val since = call("getAccount").getOrNull()
+            ?.get("account")?.jsonObject?.get("memberSince")?.jsonPrimitive?.longOrNull
+            ?.takeIf { it > 0 } ?: return null
+        prefs.edit().putLong(key, since).apply()
+        return since
+    }
+
     /** Gateway song ids are `yt-<videoId>`; BitChord's are the bare video id. */
     const val SONG_PREFIX = "yt-"
 
@@ -157,4 +174,5 @@ object Gateway {
 
     private const val KEY_USERNAME = "username"
     private const val KEY_PASSWORD = "password"
+    private const val KEY_MEMBER_SINCE = "member_since:"
 }

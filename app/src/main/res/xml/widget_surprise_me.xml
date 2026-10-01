@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Fork: the Surprise Me widget in the picker. One row, like the 4×1 player, and
-  resizable horizontally from two cells: the sparkle and its two lines need that
-  much. It draws nothing that changes on its own, so it never asks for updates.
+  Fork: the Surprise Me widget in the picker. One row, like the 4×1 player, three
+  cells wide by default, and resizable down to a single cell, where it collapses
+  to the sparkle alone (see SurpriseMeWidget). It draws nothing that changes on
+  its own, so it never asks for updates.
 -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/widget_surprise_description"
     android:initialLayout="@layout/widget_surprise_me"
     android:minHeight="40dp"
-    android:minResizeWidth="110dp"
+    android:minResizeHeight="40dp"
+    android:minResizeWidth="40dp"
     android:minWidth="180dp"
     android:previewLayout="@layout/widget_surprise_me"
     android:resizeMode="horizontal"
