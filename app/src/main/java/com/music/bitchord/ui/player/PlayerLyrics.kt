@@ -26,6 +26,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -1410,6 +1411,8 @@ internal fun LyricsPanel(
     /** False while the panel is retained offscreen solely as a warm layout. */
     active: Boolean = true,
     onSeekToLine: (Long) -> Unit,
+    /** Fork: a line held down, by its index in [lines] — opens lyric sharing. Null turns it off. */
+    onShareLine: ((Int) -> Unit)? = null,
     controlsOpen: Boolean,
     onRevealControls: () -> Unit,
     onHideControls: () -> Unit,
@@ -1869,11 +1872,13 @@ internal fun LyricsPanel(
                     }
                     .blur(blur, BlurredEdgeTreatment.Unbounded)
                     .clip(RoundedCornerShape(10.dp))
-                    .clickable(
-                        enabled = isSynced,
+                    // Fork: a long press shares the line — see onShareLine.
+                    .combinedClickable(
+                        enabled = isSynced || onShareLine != null,
                         interactionSource = interaction,
                         indication = LocalIndication.current,
-                    ) { onSeekToLine(line.timeMs) }
+                        onLongClick = onShareLine?.let { share -> { share(index) } },
+                    ) { if (isSynced) onSeekToLine(line.timeMs) }
                 // Lead and answering vocal are one row: they are one line of
                 // the song, they scale and dim together, and tapping either
                 // seeks to the same place.

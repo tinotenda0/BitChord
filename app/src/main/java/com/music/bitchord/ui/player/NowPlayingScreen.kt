@@ -651,6 +651,16 @@ fun NowPlayingScreen(
     val seekToLyric: (Long) -> Unit = { lineTimeMs ->
         onSeek(adjustedLyricsSeekTarget(lineTimeMs, lyricsOffsetMs))
     }
+    // Fork: holding a lyric line opens lyric sharing with that line picked.
+    var shareLyricFrom by remember(song.videoId) { mutableStateOf<Int?>(null) }
+    shareLyricFrom?.let { index ->
+        com.music.bitchord.lyricshare.LyricsShareBottomSheet(
+            song = song,
+            lines = lyrics.orEmpty(),
+            initialIndex = index,
+            onDismiss = { shareLyricFrom = null },
+        )
+    }
     val hideVolumeBar by AppSettings.hideVolumeBar.collectAsStateWithLifecycle()
     val hideSongStatus by AppSettings.hideSongStatus.collectAsStateWithLifecycle()
 
@@ -1609,6 +1619,7 @@ fun NowPlayingScreen(
                                     looking = !lyricsUnavailable,
                                     isPlaying = isPlaying,
                                     onSeekToLine = seekToLyric,
+                                    onShareLine = { shareLyricFrom = it },
                                     controlsOpen = true,
                                     onRevealControls = {},
                                     onHideControls = {},
@@ -2706,6 +2717,7 @@ fun NowPlayingScreen(
                                     isPlaying = isPlaying,
                                     active = lyricsPanelVisible,
                                     onSeekToLine = seekToLyric,
+                                    onShareLine = { shareLyricFrom = it },
                                     controlsOpen = lyricsControlsOpen,
                                     onRevealControls = { lyricsControlsOpen = true },
                                     onHideControls = { lyricsControlsOpen = false },

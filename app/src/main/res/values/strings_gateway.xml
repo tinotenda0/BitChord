@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-    Fork-only strings for the family gateway. Kept out of strings.xml so upstream's
+    Fork-only strings (the family gateway, and lyric sharing). Kept out of strings.xml so upstream's
     translation check (LocaleStringsTest) doesn't demand them in every language;
     they fall back to English everywhere.
 -->
@@ -22,4 +22,16 @@
     <string name="widget_surprise_failed">Couldn\'t start a mix</string>
     <string name="widget_surprise_sign_in">Sign in to your gateway in BitChord</string>
     <string name="widget_surprise_in_party">Not while you\'re listening together</string>
+    <string name="gateway_move_playlists">Bring over PixelPlayer playlists</string>
+    <string name="gateway_move_playlists_subtitle">Copies them into your YouTube Music library</string>
+    <string name="gateway_move_needs_youtube">Sign in to YouTube Music first</string>
+    <string name="gateway_move_starting">Looking for playlists…</string>
+    <string name="gateway_move_progress">Moving playlist %1$d of %2$d…</string>
+    <string name="gateway_move_nothing">Nothing left to bring over</string>
+    <string name="gateway_move_done">Brought over %1$d playlists</string>
+    <string name="gateway_move_done_with_failures">Brought over %1$d, %2$d couldn\'t be moved. Tap to try again</string>
+    <string name="share_lyrics">Share lyrics</string>
+    <string name="share_lyrics_description">Pick up to %1$d lines for the card.</string>
+    <string name="share_lyrics_pick">Pick a line</string>
+    <string name="share_lyrics_as_text">As text</string>
 </resources>
