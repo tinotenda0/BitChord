@@ -339,7 +339,7 @@ private fun drawBackdrop(canvas: Canvas, lead: Bitmap?, hue: Float) {
  * same treatment `MeshGradient` gives its own palette, restated here because
  * this runs nowhere near a composition.
  */
-private fun paletteOf(bitmap: Bitmap?): List<Int> {
+internal fun paletteOf(bitmap: Bitmap?): List<Int> {
     val fallback = listOf(0xFF3A1C71.toInt(), 0xFFD76D77.toInt(), 0xFF2B5876.toInt(), 0xFFFFAF7B.toInt())
     val source = bitmap ?: return fallback
     val swatches = runCatching {

@@ -1,100 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Fork: the listening stats widget. This month's total in the Replay's chosen unit
-  — the one big figure — over the top artist and top song, with the top song's
-  cover in a circle the way the 4×1 player shows the playing track's. The whole
-  card opens the app.
+  Fork: the listening stats widget. The card itself is drawn as one picture at the
+  widget's exact size (see StatsWidgetCard) — widget views can't do the Replay
+  card's mesh, raised type or typeface. The dark rounded background is only what
+  shows before the first picture arrives. The whole card opens the app.
 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/widget_stats"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@drawable/widget_stats_background"
-    android:gravity="center_vertical"
-    android:orientation="horizontal"
-    android:paddingLeft="18dp"
-    android:paddingTop="14dp"
-    android:paddingRight="16dp"
-    android:paddingBottom="14dp">
-
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical">
-
-        <TextView
-            android:id="@+id/widget_stats_period"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:fontFamily="@font/sf_pro_display_semibold"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:text="@string/widget_stats_this_month"
-            android:textColor="#B3FFFFFF"
-            android:textSize="13sp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:baselineAligned="true"
-            android:orientation="horizontal">
-
-            <TextView
-                android:id="@+id/widget_stats_total"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="@font/sf_pro_display_heavy"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:text="0"
-                android:textColor="#FFFFFFFF"
-                android:textSize="34sp" />
-
-            <TextView
-                android:id="@+id/widget_stats_unit"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginLeft="6dp"
-                android:fontFamily="@font/sf_pro_display_semibold"
-                android:includeFontPadding="false"
-                android:maxLines="1"
-                android:text="@string/minutes"
-                android:textColor="#BFFFFFFF"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/widget_stats_artist"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="10dp"
-            android:ellipsize="end"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:textColor="#FFFFFFFF"
-            android:textSize="14sp" />
-
-        <TextView
-            android:id="@+id/widget_stats_song"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:ellipsize="end"
-            android:includeFontPadding="false"
-            android:maxLines="1"
-            android:textColor="#D9FFFFFF"
-            android:textSize="14sp" />
-    </LinearLayout>
+    android:background="@drawable/widget_stats_background">
 
     <ImageView
-        android:id="@+id/widget_stats_art"
-        android:layout_width="@dimen/widget_pill_art"
-        android:layout_height="@dimen/widget_pill_art"
-        android:layout_marginLeft="12dp"
-        android:background="@drawable/widget_pill_art_placeholder"
-        android:contentDescription="@string/widget_artwork"
+        android:id="@+id/widget_stats_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/widget_stats_label"
         android:scaleType="fitXY" />
-</LinearLayout>
+</FrameLayout>

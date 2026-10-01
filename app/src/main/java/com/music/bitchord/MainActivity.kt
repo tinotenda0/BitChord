@@ -1956,6 +1956,10 @@ private fun BitChordApp(
         (selectedTab == TAB_LIBRARY && detail == null && !showSettings)
     val (replay, setReplayPeriod) = rememberReplayState(replayOpen)
     val replayUnit by com.music.bitchord.ui.replay.ReplayUnits.unit.collectAsStateWithLifecycle()
+    // Fork: the stats widget's card carries the same name the Library's cards do.
+    LaunchedEffect(account?.name) {
+        com.music.bitchord.gateway.ListeningStatsWidget.setHolder(context, account?.name)
+    }
     val replayCards = remember(replay.summary, replayUnit) {
         replay.summary?.takeUnless { it.isEmpty }?.cards(context).orEmpty()
     }

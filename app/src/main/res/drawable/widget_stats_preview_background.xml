@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fork: the stats widget's picker preview — the card's mesh, approximated in two gradients. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="20dp" />
+            <gradient
+                android:angle="315"
+                android:centerColor="#FF8E54E9"
+                android:endColor="#FF2B5876"
+                android:startColor="#FFD76D77" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="rectangle">
+            <corners android:radius="20dp" />
+            <gradient
+                android:angle="270"
+                android:centerColor="#4D000000"
+                android:endColor="#8C000000"
+                android:startColor="#2E000000" />
+        </shape>
+    </item>
+</layer-list>

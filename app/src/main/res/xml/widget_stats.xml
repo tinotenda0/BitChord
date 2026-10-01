@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Fork: the listening stats widget in the picker. Two rows by three cells by
-  default; resizable both ways, down to what the figure and two lines need.
+  Fork: the listening stats widget in the picker. Four cells by two by default,
+  which is wide enough for the top-songs chart beside the figure; resizable both
+  ways, and narrower than that the card drops the chart for the top artist.
   updatePeriodMillis is the system's floor of 30 minutes, as a backstop: the app
   also redraws it whenever a listen is reported and when the unit changes.
 -->
@@ -9,12 +10,12 @@
     android:description="@string/widget_stats_description"
     android:initialLayout="@layout/widget_stats"
     android:minHeight="110dp"
-    android:minResizeHeight="90dp"
+    android:minResizeHeight="110dp"
     android:minResizeWidth="180dp"
     android:minWidth="250dp"
-    android:previewLayout="@layout/widget_stats"
+    android:previewLayout="@layout/widget_stats_preview"
     android:resizeMode="horizontal|vertical"
     android:targetCellHeight="2"
-    android:targetCellWidth="3"
+    android:targetCellWidth="4"
     android:updatePeriodMillis="1800000"
     android:widgetCategory="home_screen" />

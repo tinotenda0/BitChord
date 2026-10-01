@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Fork: what the widget picker shows for the stats widget. The real card is drawn
+  from the listener's own month, so this stands in with its shape and type.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_stats_preview_background"
+    android:padding="16dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="@font/sf_pro_display_semibold"
+        android:letterSpacing="0.16"
+        android:text="@string/your_listening_experience"
+        android:textAllCaps="true"
+        android:textColor="#B8FFFFFF"
+        android:textSize="9sp" />
+
+    <LinearLayout
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/sf_pro_display_heavy"
+            android:shadowColor="#99000000"
+            android:shadowDy="2"
+            android:shadowRadius="3"
+            android:text="1,284"
+            android:textColor="#FFF3F4F8"
+            android:textSize="30sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="@font/sf_pro_display_semibold"
+            android:letterSpacing="0.18"
+            android:text="@string/minutes_listened"
+            android:textAllCaps="true"
+            android:textColor="#A6FFFFFF"
+            android:textSize="9sp" />
+    </LinearLayout>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:fontFamily="monospace"
+        android:letterSpacing="0.12"
+        android:shadowColor="#99000000"
+        android:shadowDy="2"
+        android:shadowRadius="3"
+        android:text="@string/default_replay_holder"
+        android:textAllCaps="true"
+        android:textColor="#FFF3F4F8"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+</FrameLayout>
