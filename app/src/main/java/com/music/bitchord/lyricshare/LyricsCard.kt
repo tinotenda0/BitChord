@@ -86,12 +86,7 @@ suspend fun renderLyricsCard(context: Context, song: Song, lines: List<String>):
 private fun drawBackdrop(canvas: Canvas, artwork: Bitmap?) {
     val full = Rect(0, 0, CARD_W, CARD_H)
     if (artwork != null) {
-        val tiny = Bitmap.createScaledBitmap(artwork, BLUR_SIZE, BLUR_SIZE, true)
-        // Cropped to the card's shape from the square, then stretched: the
-        // scaling's own filtering is the blur.
-        val cropW = BLUR_SIZE * CARD_W / CARD_H
-        val source = Rect((BLUR_SIZE - cropW) / 2, 0, (BLUR_SIZE + cropW) / 2, BLUR_SIZE)
-        canvas.drawBitmap(tiny, source, full, Paint(Paint.FILTER_BITMAP_FLAG))
+        canvas.drawBitmap(blurredBackdrop(artwork), null, full, Paint(Paint.FILTER_BITMAP_FLAG))
     } else {
         canvas.drawColor(0xFF1C1C22.toInt())
     }
@@ -106,6 +101,57 @@ private fun drawBackdrop(canvas: Canvas, artwork: Bitmap?) {
             )
         },
     )
+}
+
+/**
+ * The cover cropped to the card's 9:16, softened and scaled back up.
+ *
+ * Worked at a fifth of the card's size, which keeps the cover's shapes and colours
+ * recognisable once stretched, and blurred there with three box passes — close to
+ * a Gaussian, and smooth where stretching a tiny thumbnail on its own goes blocky.
+ */
+private fun blurredBackdrop(artwork: Bitmap): Bitmap {
+    // The middle of the square, as wide as a 9:16 slice of it can be.
+    val cropW = artwork.height * CARD_W / CARD_H
+    val left = ((artwork.width - cropW) / 2).coerceAtLeast(0)
+    val slice = Bitmap.createBitmap(artwork, left, 0, cropW.coerceAtMost(artwork.width), artwork.height)
+    val small = Bitmap.createScaledBitmap(slice, BACKDROP_W, BACKDROP_H, true)
+    val pixels = IntArray(BACKDROP_W * BACKDROP_H)
+    small.getPixels(pixels, 0, BACKDROP_W, 0, 0, BACKDROP_W, BACKDROP_H)
+    val scratch = IntArray(pixels.size)
+    repeat(BLUR_PASSES) {
+        boxBlur(pixels, scratch, BACKDROP_W, BACKDROP_H, BLUR_RADIUS, horizontal = true)
+        boxBlur(scratch, pixels, BACKDROP_W, BACKDROP_H, BLUR_RADIUS, horizontal = false)
+    }
+    return Bitmap.createBitmap(pixels, BACKDROP_W, BACKDROP_H, Bitmap.Config.ARGB_8888)
+}
+
+/** One running-sum box blur along rows or columns, from [src] into [dst], edges clamped. */
+private fun boxBlur(src: IntArray, dst: IntArray, w: Int, h: Int, radius: Int, horizontal: Boolean) {
+    val lines = if (horizontal) h else w
+    val length = if (horizontal) w else h
+    val window = radius * 2 + 1
+    for (line in 0 until lines) {
+        fun at(i: Int): Int {
+            val c = i.coerceIn(0, length - 1)
+            return if (horizontal) line * w + c else c * w + line
+        }
+        var r = 0
+        var g = 0
+        var b = 0
+        for (i in -radius..radius) {
+            val p = src[at(i)]
+            r += (p shr 16) and 0xFF; g += (p shr 8) and 0xFF; b += p and 0xFF
+        }
+        for (i in 0 until length) {
+            dst[at(i)] = (0xFF shl 24) or ((r / window) shl 16) or ((g / window) shl 8) or (b / window)
+            val out = src[at(i - radius)]
+            val incoming = src[at(i + radius + 1)]
+            r += ((incoming shr 16) and 0xFF) - ((out shr 16) and 0xFF)
+            g += ((incoming shr 8) and 0xFF) - ((out shr 8) and 0xFF)
+            b += (incoming and 0xFF) - (out and 0xFF)
+        }
+    }
 }
 
 private fun Rect.toRectF() = RectF(this)
@@ -171,8 +217,13 @@ private const val CARD_H = 1920
 private const val MARGIN = 64f
 private const val PADDING = 52f
 private const val COVER = 132f
-private const val ART_PX = 600
-private const val BLUR_SIZE = 24
+private const val ART_PX = 1200
+
+/** The backdrop is softened at a fifth of the card's size, then stretched to fit it. */
+private const val BACKDROP_W = CARD_W / 5
+private const val BACKDROP_H = CARD_H / 5
+private const val BLUR_RADIUS = 5
+private const val BLUR_PASSES = 3
 
 private const val LYRIC_MAX = 72f
 private const val LYRIC_MIN = 44f
