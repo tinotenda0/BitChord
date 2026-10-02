@@ -227,7 +227,7 @@ func handleTime(w http.ResponseWriter, r *http.Request) {
 
 func handleCreateParty(w http.ResponseWriter, r *http.Request) {
 	if !createLimiter.Allow(clientIP(r)) {
-		jsonError(w, http.StatusTooManyRequests, "create_rate_limited", "You can create up to two parties per minute. Please try again shortly.")
+		jsonError(w, http.StatusTooManyRequests, "create_rate_limited", fmt.Sprintf("You can create up to %d parties per minute. Please try again shortly.", config.CreateRatePerMinute))
 		return
 	}
 	var req protocol.JoinRequest
