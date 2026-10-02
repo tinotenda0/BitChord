@@ -502,6 +502,10 @@ type Party struct {
 	EmptySinceMs    *int64
 	// LastReanchorMs is when Reanchor last moved the party. See ReanchorCooldownMs.
 	LastReanchorMs int64
+	// PendingOutput is a device woken to take playback over: when it signs in
+	// before PendingUntilMs it is handed it, whatever is playing elsewhere.
+	PendingOutput  string
+	PendingUntilMs int64
 }
 
 func NewParty(code string) *Party {
@@ -663,6 +667,14 @@ func (p *Party) JoinConnect(userId, deviceKey, app, deviceName, displayName stri
 	m.LastSeenMs = now
 	m.Token = randomToken(24)
 
+	// Asked for: somebody pressed "play here" on this device while it slept.
+	if p.PendingOutput == deviceId && now < p.PendingUntilMs {
+		p.PendingOutput = ""
+		p.handOver(m)
+		p.Touch()
+		return m, nil
+	}
+
 	host := p.Host()
 	idle := !p.Playback.IsPlaying && now-p.Playback.UpdatedAtMs > config.ConnectHandoverMs
 	if host == nil || host == m || host.IsRemote() || !host.Connected || idle {
@@ -714,7 +726,15 @@ func (p *Party) Transfer(to string) error {
 	if target.IsHost && !target.IsRemote() {
 		return nil
 	}
-	p.setOutput(target)
+	p.handOver(target)
+	p.Touch()
+	return nil
+}
+
+// handOver makes m the output and restarts a playing party a moment ahead,
+// for m to load the song. See Transfer.
+func (p *Party) handOver(m *Member) {
+	p.setOutput(m)
 	pb := p.Playback
 	now := clock.NowMs()
 	if pb.IsPlaying {
@@ -723,8 +743,27 @@ func (p *Party) Transfer(to string) error {
 	}
 	pb.Seq++
 	pb.UpdatedAtMs = now
-	p.Touch()
+}
+
+// ExpectOutput marks a device being woken as the one to hand playback to when
+// it arrives. Only one at a time: waking a second replaces the first.
+func (p *Party) ExpectOutput(deviceId string) error {
+	if !p.IsConnect() {
+		return NewPartyError(409, "not_connect", "Playback can only be moved between your own devices.")
+	}
+	p.PendingOutput = deviceId
+	p.PendingUntilMs = clock.NowMs() + config.WakeWindowMs
 	return nil
+}
+
+// HasDevice reports whether a device (deviceKey:app) is a member right now.
+func (p *Party) HasDevice(deviceId string) bool {
+	for _, m := range p.Members {
+		if m.DeviceId == deviceId {
+			return true
+		}
+	}
+	return false
 }
 
 // checkRoom refuses a member of this role once that role is full. except is a

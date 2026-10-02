@@ -228,3 +228,46 @@ func TestConnectLimitsDevicesNotRoles(t *testing.T) {
 	}
 	_ = protocol.RoleRemote
 }
+
+func TestAWokenDeviceTakesOverEvenWhileAnotherPlays(t *testing.T) {
+	p := connectParty(t)
+	phone := join(t, p, "phone0001", "prod")
+	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
+	if err := p.ExpectOutput("laptop001:prod"); err != nil {
+		t.Fatalf("expect refused: %v", err)
+	}
+
+	// A different device arriving meanwhile is still a remote.
+	tablet := join(t, p, "tablet001", "prod")
+	if !tablet.IsRemote() {
+		t.Fatalf("only the woken device is handed playback")
+	}
+
+	laptop := join(t, p, "laptop001", "prod")
+	if laptop.IsRemote() || !laptop.IsHost || !phone.IsRemote() {
+		t.Fatalf("the woken device must take playback over on arrival")
+	}
+	if !p.Playback.IsPlaying || p.Playback.AnchorMs <= clock.NowMs() {
+		t.Errorf("playback must carry on, restarted a moment ahead for the new device")
+	}
+	if p.PendingOutput != "" {
+		t.Errorf("the wake must be used up")
+	}
+
+	// Coming back a second time is an ordinary arrival.
+	join(t, p, "phone0001", "prod")
+	if p.ClockMember() != laptop {
+		t.Errorf("a used-up wake must not hand playback over again")
+	}
+}
+
+func TestAnExpiredWakeIsIgnored(t *testing.T) {
+	p := connectParty(t)
+	phone := join(t, p, "phone0001", "prod")
+	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
+	_ = p.ExpectOutput("laptop001:prod")
+	p.PendingUntilMs = clock.NowMs() - 1
+	if laptop := join(t, p, "laptop001", "prod"); !laptop.IsRemote() {
+		t.Fatalf("a wake that came too late must not hijack playback")
+	}
+}

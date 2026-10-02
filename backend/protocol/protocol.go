@@ -45,6 +45,8 @@ const (
 	ActionSetHostOnlyControl = "setHostOnlyControl"
 	// ActionTransfer moves a Connect party's playback to another of its devices.
 	ActionTransfer = "transfer"
+	// ActionWake moves it to one that is asleep, by waking it with a push.
+	ActionWake = "wake"
 )
 
 // ControlActions are the actions a party's HostOnlyControl setting restricts to
@@ -65,6 +67,7 @@ var ControlActions = map[string]bool{
 	ActionPrevious:    true,
 	ActionSetAutoplay: true,
 	ActionTransfer:    true,
+	ActionWake:        true,
 }
 
 // ConnectRequest is how one of an account's devices joins its Connect party:
@@ -78,6 +81,8 @@ type ConnectRequest struct {
 	DeviceName   string  `json:"deviceName"`
 	DisplayName  string  `json:"displayName"`
 	AvatarUrl    *string `json:"avatarUrl,omitempty"`
+	// PushEndpoint is the device's UnifiedPush endpoint, for waking it later.
+	PushEndpoint string  `json:"pushEndpoint,omitempty"`
 }
 
 func isWord(s string, min, max int) bool {
@@ -101,6 +106,10 @@ func (r *ConnectRequest) Validate() error {
 	r.App = strings.ToLower(strings.TrimSpace(r.App))
 	if !isWord(r.App, 1, 16) {
 		return errors.New("app must be 1 to 16 letters or digits")
+	}
+	r.PushEndpoint = strings.TrimSpace(r.PushEndpoint)
+	if len(r.PushEndpoint) > 1000 {
+		r.PushEndpoint = ""
 	}
 	r.DeviceName = strings.TrimSpace(r.DeviceName)
 	if len(r.DeviceName) > 80 {

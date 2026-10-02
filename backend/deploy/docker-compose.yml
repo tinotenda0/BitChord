@@ -21,6 +21,15 @@ services:
       # Connect checks logins against the family gateway. Its public address,
       # because the host's firewall does not let a container reach it locally.
       JAM_GATEWAY_URL: "https://api.tinotenda.co"
+      # Waking a sleeping device: where its device list is kept, and the only
+      # push server a wake-up may be sent to.
+      JAM_DATA_DIR: "/data"
+      JAM_PUSH_HOSTS: "ntfy.tinotenda.co"
+    volumes:
+      - jam-data:/data
     read_only: true
     security_opt:
       - no-new-privileges:true
+
+volumes:
+  jam-data:

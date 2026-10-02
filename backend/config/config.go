@@ -90,6 +90,16 @@ var (
 	// How far ahead a transferred song restarts, for the new device to load it.
 	TransferLeadMs       = int64(getInt("JAM_TRANSFER_LEAD_MS", 1500))
 	ConnectRatePerMinute = getInt("JAM_CONNECT_RATE_PER_MINUTE", 30)
+	// Where the account device list is saved; empty keeps it in memory only.
+	DataDir              = getString("JAM_DATA_DIR", "")
+	// The only hosts a wake-up push may be sent to. A device's push endpoint is
+	// a URL it chose, so without this list "wake my laptop" would let anyone
+	// make this server POST anywhere.
+	PushHosts            = getCSV("JAM_PUSH_HOSTS", "")
+	// A device not seen for this long drops off the list.
+	DeviceForgetMs       = int64(getInt("JAM_DEVICE_FORGET_DAYS", 60)) * 24 * 60 * 60 * 1000
+	// How long a woken device has to arrive and still be handed playback.
+	WakeWindowMs         = int64(getInt("JAM_WAKE_WINDOW_MS", 90000))
 	StateHeartbeatMs     = getInt("JAM_STATE_HEARTBEAT_MS", 5000)
 	PlayLeadMs           = getInt("JAM_PLAY_LEAD_MS", 350)
 	DisconnectGraceMs    = int64(getInt("JAM_DISCONNECT_GRACE_MS", 45000))

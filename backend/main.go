@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"github.com/KabirSinghBhatia/BitChord/backend/clock"
 	"github.com/KabirSinghBhatia/BitChord/backend/codes"
 	"github.com/KabirSinghBhatia/BitChord/backend/config"
+	"github.com/KabirSinghBhatia/BitChord/backend/devices"
 	"github.com/KabirSinghBhatia/BitChord/backend/gateway"
 	"github.com/KabirSinghBhatia/BitChord/backend/hub"
 	"github.com/KabirSinghBhatia/BitChord/backend/party"
@@ -28,6 +30,7 @@ import (
 )
 
 var (
+	registry *devices.Registry
 	store    = party.NewPartyStore()
 	hubInst  = hub.NewHub()
 	createLimiter = newIPRateLimiter(time.Minute, config.CreateRatePerMinute, config.RateLimitMaxEntries)
@@ -340,6 +343,41 @@ func handleJoinParty(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func init() {
+	registry = devices.Open(devicesPath(), config.PushHosts, time.Duration(config.DeviceForgetMs)*time.Millisecond)
+}
+
+func devicesPath() string {
+	if config.DataDir == "" {
+		return ""
+	}
+	return config.DataDir + "/devices.json"
+}
+
+// withDevices adds an account's known devices to a Connect party's snapshot
+// or members frame: what the devices sheet lists beside the ones connected,
+// including the ones asleep that a push can wake.
+func withDevices(p *party.Party, wire map[string]interface{}) map[string]interface{} {
+	if !p.IsConnect() {
+		return wire
+	}
+	known := registry.List(p.Account)
+	list := make([]map[string]interface{}, 0, len(known))
+	for _, d := range known {
+		list = append(list, map[string]interface{}{
+			"deviceId":   d.DeviceId,
+			"deviceKey":  d.DeviceKey,
+			"app":        d.App,
+			"deviceName": d.DeviceName,
+			"wakeable":   d.Wakeable(),
+			"lastSeenMs": d.LastSeenMs,
+			"connected":  p.HasDevice(d.DeviceId),
+		})
+	}
+	wire["devices"] = list
+	return wire
+}
+
 // handleConnect signs one of an account's devices into its Connect party.
 //
 // The answer has the same shape as a join, so the app drives a Connect party
@@ -371,6 +409,14 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	registry.Seen(account, devices.Device{
+		DeviceId:     req.DeviceKey + ":" + req.App,
+		DeviceKey:    req.DeviceKey,
+		App:          req.App,
+		DeviceName:   req.DeviceName,
+		PushEndpoint: req.PushEndpoint,
+	}, clock.NowMs())
+
 	p := store.Account(account)
 	p.Lock()
 	m, err := p.JoinConnect("gw:"+account, req.DeviceKey, req.App, req.DeviceName, req.DisplayName, req.AvatarUrl)
@@ -383,7 +429,7 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusInternalServerError, "server_error", err.Error())
 		return
 	}
-	partyWire := p.ToWire()
+	partyWire := withDevices(p, p.ToWire())
 	youWire := m.ToWire()
 	token := m.Token
 	code := p.Code
@@ -857,7 +903,7 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	welcome := map[string]interface{}{
 		"type":     protocol.FrameWelcome,
 		"you":      member.ToWire(),
-		"party":    p.ToWire(),
+		"party":    withDevices(p, p.ToWire()),
 		"serverMs": clock.NowMs(),
 	}
 	membersF := membersFrame(p)
@@ -1170,6 +1216,36 @@ func applyControl(p *party.Party, member *party.Member, action string, frame map
 		}
 		return true, "", ""
 
+	case protocol.ActionWake:
+		deviceId, _ := frame["deviceId"].(string)
+		if !p.IsConnect() {
+			return false, "not_connect", "Playback can only be moved between your own devices."
+		}
+		d, ok := registry.Get(p.Account, deviceId)
+		if !ok || !d.Wakeable() {
+			return false, "not_wakeable", devices.ErrNotWakeable.Error()
+		}
+		if err := p.ExpectOutput(deviceId); err != nil {
+			pe := err.(*party.PartyError)
+			return false, pe.Code, pe.Message
+		}
+		// Off the party lock: the push server is another round trip, and
+		// nothing about the party waits on it. A push that fails is told to the
+		// device that asked, which is the only one that can do anything about it.
+		code, asker := p.Code, member.MemberId
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := registry.Wake(ctx, d); err != nil {
+				log.Printf("party %s: could not wake %s: %v", code, deviceId, err)
+				hubInst.Send(code, asker, map[string]interface{}{
+					"type": protocol.FrameError, "error": "wake_failed",
+					"message": "Couldn’t reach that device. Open BitChord on it and try again.",
+				})
+			}
+		}()
+		return true, "", ""
+
 	case protocol.ActionKick:
 		targetID, _ := frame["memberId"].(string)
 		if !member.IsHost { return false, "host_only", "Only the host can remove listeners." }
@@ -1229,6 +1305,7 @@ func activityFrame(member *party.Member, action string, frame map[string]interfa
 	case protocol.ActionSetMaxMembers: detail = "Changed the party size"
 	case protocol.ActionSetAutoplay: detail = "Changed AutoPlay"
 	case protocol.ActionTransfer: detail = "Moved playback to another device"
+	case protocol.ActionWake: detail = "Woke a device to play on it"
 	}
 	return map[string]interface{}{"type": protocol.FrameActivity, "action": action, "by": member.DisplayName, "detail": detail, "atMs": clock.NowMs()}
 }
@@ -1246,13 +1323,13 @@ func membersFrame(p *party.Party) map[string]interface{} {
 	for _, m := range p.Members {
 		membersList = append(membersList, m.ToWire())
 	}
-	return map[string]interface{}{
+	return withDevices(p, map[string]interface{}{
 		"type":            protocol.FrameMembers,
 		"members":         membersList,
 		"maxMembers":      p.MaxMembers,
 		"hostOnlyControl": p.HostOnlyControl,
 		"serverMs":        clock.NowMs(),
-	}
+	})
 }
 
 // Background Heartbeat Ticker
