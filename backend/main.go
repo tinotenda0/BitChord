@@ -238,6 +238,10 @@ func handleCreateParty(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
 		return
 	}
+	if req.Role == protocol.RoleRemote {
+		jsonError(w, http.StatusUnprocessableEntity, "remote_cannot_host", "A party has to be started from the device that plays it.")
+		return
+	}
 
 	maxMembers := 5
 	if req.MaxMembers != nil { maxMembers = *req.MaxMembers }
@@ -304,7 +308,7 @@ func handleJoinParty(w http.ResponseWriter, r *http.Request) {
 	}
 
 	p.Lock()
-	m, err := p.Join(req.UserId, req.DeviceId, req.DisplayName, req.AvatarUrl)
+	m, err := p.JoinAs(req.UserId, req.DeviceId, req.DisplayName, req.AvatarUrl, req.Role)
 	if err != nil {
 		p.Unlock()
 		if pe, ok := err.(*party.PartyError); ok {
@@ -370,6 +374,7 @@ func handlePreviewParty(w http.ResponseWriter, r *http.Request) {
 			"displayName": m.DisplayName,
 			"avatarUrl":   m.AvatarUrl,
 			"isHost":      m.IsHost,
+			"role":        m.Role,
 		})
 		if m.IsHost {
 			hostName = m.DisplayName
@@ -380,7 +385,7 @@ func handlePreviewParty(w http.ResponseWriter, r *http.Request) {
 		"hostName":    hostName,
 		"memberCount": len(p.Members),
 		"maxMembers":  p.MaxMembers,
-		"isFull":      len(p.Members) >= p.MaxMembers,
+		"isFull":      p.SpeakerCount() >= p.MaxMembers,
 		"members":     members,
 	}
 	p.Unlock()
@@ -842,12 +847,30 @@ func handleSocketFrame(p *party.Party, member *party.Member, sc *hub.SafeConn, f
 		_ = sc.WriteJSON(queueFrame(p))
 
 	case protocol.FrameReport:
-		// Playhead position report from client for monitoring
-		if posNum, ok := frame["positionMs"].(float64); ok && p.Playback.IsPlaying {
-			drift := int64(posNum) - p.Playback.PositionAt(clock.NowMs())
-			if drift > 1500 || drift < -1500 {
-				log.Printf("party %s: %s drifted %dms", p.Code, member.DisplayName, drift)
+		posNum, ok := frame["positionMs"].(float64)
+		if !ok || !p.Playback.IsPlaying {
+			break
+		}
+		now := clock.NowMs()
+		// A measured report is the device's real playhead, at a server time it
+		// stamps itself. Older clients send the position they computed from the
+		// party instead, which can only ever agree with it, so only a report
+		// that says it was measured is allowed to move anything.
+		if measured, _ := frame["measured"].(bool); measured {
+			atMs := now
+			if at, ok := frame["atMs"].(float64); ok {
+				atMs = int64(at)
 			}
+			videoId, _ := frame["videoId"].(string)
+			if p.Reanchor(member, videoId, int64(posNum), atMs, now) {
+				log.Printf("party %s: re-anchored onto %s at %dms", p.Code, member.DisplayName, int64(posNum))
+				hubInst.Broadcast(p.Code, stateFrame(p), "")
+			}
+			break
+		}
+		drift := int64(posNum) - p.Playback.PositionAt(now)
+		if drift > 1500 || drift < -1500 {
+			log.Printf("party %s: %s drifted %dms", p.Code, member.DisplayName, drift)
 		}
 
 	case protocol.FrameControl:
@@ -1083,7 +1106,7 @@ func applyControl(p *party.Party, member *party.Member, action string, frame map
 func stateFrame(p *party.Party) map[string]interface{} {
 	return map[string]interface{}{
 		"type":     protocol.FrameState,
-		"playback": p.Playback.ToWire(clock.NowMs()),
+		"playback": p.PlaybackToWire(clock.NowMs()),
 		"serverMs": clock.NowMs(),
 	}
 }

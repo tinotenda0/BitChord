@@ -61,6 +61,15 @@ func IsAllowedOrigin(origin string) bool {
 
 var (
 	MaxMembers           = getInt("JAM_MAX_MEMBERS", 5)
+	// Remotes play nothing, so they are counted apart from MaxMembers: a full
+	// party can still be driven from another phone.
+	MaxRemotes           = getInt("JAM_MAX_REMOTES", 5)
+	// How far the clock device's measured playhead may stray from the party
+	// before the party is re-anchored onto it. See Party.ClockMember.
+	ReanchorThresholdMs  = int64(getInt("JAM_REANCHOR_THRESHOLD_MS", 1000))
+	// The least time between two re-anchors of one party, so a device that is
+	// stalling repeatedly cannot drag everybody else along at every report.
+	ReanchorCooldownMs   = int64(getInt("JAM_REANCHOR_COOLDOWN_MS", 3000))
 	StateHeartbeatMs     = getInt("JAM_STATE_HEARTBEAT_MS", 5000)
 	PlayLeadMs           = getInt("JAM_PLAY_LEAD_MS", 350)
 	DisconnectGraceMs    = int64(getInt("JAM_DISCONNECT_GRACE_MS", 45000))

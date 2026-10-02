@@ -64,9 +64,39 @@ trick, and four things protect it:
    a phone coming back from doze, an offset that has wandered — none of those
    announce themselves, so correctness must not depend on anyone asking.
 
-The server's state is the truth. Devices *report* their real playhead
-(`{"type":"report"}`), but that is only logged — a party is never averaged
-towards a straggler on a bad connection.
+The server's state is the truth, with one exception: the **clock member**.
+
+## Remotes, and the host as the clock
+
+A member joins as a `speaker` (the default: it plays the party out loud) or as
+a `remote` (it plays nothing and only drives the party, like a phone
+controlling somebody else's speaker). Remotes are counted apart from
+`JAM_MAX_MEMBERS`, up to `JAM_MAX_REMOTES`, so a full party can still be
+steered from another phone. A party cannot be started by a remote, and the host
+role prefers speakers: a party left holding only remotes gives the role to one
+of them, and the next speaker to join takes it back.
+
+The host, while it is a speaker, is the party's **clock** and is named as
+`clockMemberId` on every state frame. The server's timeline is an ideal that
+a real player only approximates. When everyone plays, closing that gap is each
+device's own business. But a remote's progress bar describes audio coming out
+of the host, and the host skipping its own music forward to match an ideal
+nobody is hearing would be exactly backwards. So the clock device sends its
+real playhead:
+
+```jsonc
+{"type": "report", "measured": true, "videoId": "…", "positionMs": 41200, "atMs": 1757630042000}
+```
+
+`atMs` is the server-clock instant the position was true at. When it differs
+from the party by more than `JAM_REANCHOR_THRESHOLD_MS` (default 1 s), the party
+is re-anchored onto it: `seq` is bumped, `updatedBy` is left alone, and the state
+is broadcast. Reports just after a control (while devices are still starting),
+for another track, stamped far from now, or within `JAM_REANCHOR_COOLDOWN_MS`
+of the last re-anchor are ignored. A report without `measured`, which is what
+older clients send, is only logged. A party is never averaged towards a
+straggler on a bad connection; it only follows the one device whose speaker
+counts.
 
 ## Identity, and what it is worth
 
@@ -116,7 +146,7 @@ matching Kotlin's naming keeps `@SerialName` off every field.
 | `GET /healthz` | Render's health check. |
 | `GET /api/time` | `{"serverMs":…}` — a clock sample before the socket exists. |
 | `POST /api/parties` | Create a party and join it as host. Body: `userId`, `deviceId`, `displayName`, `avatarUrl?`. → `201` with `code`, `token`, `you`, `party`. Creation is capped per IP and by the service-wide party limit. |
-| `POST /api/parties/{code}/join` | Same body. `404` unknown code, `409` full, `422` no identity. The code is normalised first, so lower case, spaces, and `O`/`I`/`L` typed for `0`/`1` all work. |
+| `POST /api/parties/{code}/join` | Same body, plus `role?` (`speaker` or `remote`). Rejoining with a different role switches it. `404` unknown code, `409` full, `422` no identity. The code is normalised first, so lower case, spaces, and `O`/`I`/`L` typed for `0`/`1` all work. |
 | `GET /api/parties/{code}` | Full snapshot. Needs `Authorization: Bearer <token>`. |
 | `POST /api/parties/{code}/leave` | Give up the slot. Needs the bearer token. |
 
@@ -306,7 +336,10 @@ Every one of these is optional — `config/config.go` carries the same defaults.
 
 | Variable | Default | |
 |---|---|---|
-| `JAM_MAX_MEMBERS` | `5` | Devices per party. |
+| `JAM_MAX_MEMBERS` | `5` | Speakers per party. |
+| `JAM_MAX_REMOTES` | `5` | Remotes per party, counted separately. |
+| `JAM_REANCHOR_THRESHOLD_MS` | `1000` | How far the clock may stray before the party follows it. |
+| `JAM_REANCHOR_COOLDOWN_MS` | `3000` | Least time between two re-anchors. |
 | `JAM_STATE_HEARTBEAT_MS` | `5000` | How often the truth is re-stated. |
 | `JAM_PLAY_LEAD_MS` | `350` | How far ahead a resume is scheduled. |
 | `JAM_MAX_UPCOMING_QUEUE` | `25` | Maximum upcoming tracks in shared queue. |

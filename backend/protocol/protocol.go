@@ -72,7 +72,17 @@ type JoinRequest struct {
 	AvatarUrl   *string `json:"avatarUrl,omitempty"`
 	MaxMembers  *int    `json:"maxMembers,omitempty"`
 	AutoplayEnabled *bool `json:"autoplayEnabled,omitempty"`
+	// Role is RoleSpeaker or RoleRemote. Absent means speaker, which is what
+	// every member was before remotes existed.
+	Role string `json:"role,omitempty"`
 }
+
+// Member roles. A speaker plays the party out loud; a remote only drives it,
+// like a phone controlling somebody else's speaker.
+const (
+	RoleSpeaker = "speaker"
+	RoleRemote  = "remote"
+)
 
 // Validate ensures all required identity fields are present and safe.
 func (r *JoinRequest) Validate() error {
@@ -102,6 +112,14 @@ func (r *JoinRequest) Validate() error {
 		} else {
 			r.AvatarUrl = &trimmed
 		}
+	}
+	switch strings.TrimSpace(r.Role) {
+	case "", RoleSpeaker:
+		r.Role = RoleSpeaker
+	case RoleRemote:
+		r.Role = RoleRemote
+	default:
+		return errors.New("role must be speaker or remote")
 	}
 	if r.MaxMembers != nil && (*r.MaxMembers < 2 || *r.MaxMembers > 10) {
 		return errors.New("maxMembers must be between 2 and 10")
