@@ -202,6 +202,22 @@ object ListenTogether {
          */
         val controlsLocked: Boolean
             get() = inParty && hostOnlyControl && you?.isHost != true
+
+        /**
+         * This device drives the party without playing it, like a phone
+         * controlling somebody else's speaker. Its player is left alone and the
+         * playback service shows the party through `PartyRemotePlayer` instead.
+         */
+        val isRemote: Boolean
+            get() = inParty && you?.isRemote == true
+
+        /**
+         * This device's real playhead is the one the party follows. It reports
+         * what it is actually playing and does not chase the party itself; see
+         * [PartyPlayback.clockMemberId].
+         */
+        val isClock: Boolean
+            get() = inParty && you != null && playback.clockMemberId == you.memberId
     }
 
     /** A refusal from the server, carrying the machine-readable half. */
@@ -806,17 +822,21 @@ object ListenTogether {
      * require target-first transactional semantics and recovery guarantees
      * that are intentionally not part of this API.
      */
-    suspend fun joinParty(code: String, nickname: String = nickname()): Result<String> = switchMutex.withLock {
+    suspend fun joinParty(
+        code: String,
+        nickname: String = nickname(),
+        asRemote: Boolean = false,
+    ): Result<String> = switchMutex.withLock {
         val targetServer = resolveHttpBase(effectiveIdleServerBase())
         runCatching {
-            doJoinOnServer(targetServer, code, nickname)
+            doJoinOnServer(targetServer, code, nickname, asRemote)
         }.onFailure { failure ->
             Log.w(TAG, "could not enter a party: ${redact(failure.message)}")
             _state.update { it.copy(error = failure.displayMessage()) }
         }
     }
 
-    private suspend fun doJoinOnServer(serverBase: String, code: String, nickname: String): String {
+    private suspend fun doJoinOnServer(serverBase: String, code: String, nickname: String, asRemote: Boolean): String {
         val who = identity(nickname) ?: throw PartyException("not_signed_in", "Sign in to listen together.")
         if (serverBase.isBlank()) throw PartyException("no_server", "Set the party server address first.")
         val cleaned = code.filter { it.isLetterOrDigit() }.uppercase()
@@ -826,7 +846,10 @@ object ListenTogether {
         refuseIfRecentlyKicked(cleaned)
         val membership = post(
             "$serverBase/api/parties/$cleaned/join",
-            JoinRequest(who.userId, who.deviceId, who.name, who.avatar),
+            JoinRequest(
+                who.userId, who.deviceId, who.name, who.avatar,
+                role = if (asRemote) PartyMember.ROLE_REMOTE else null,
+            ),
         )
 
         withContext(NonCancellable) {
@@ -879,6 +902,7 @@ object ListenTogether {
         targetCustomServer: String,
         targetCode: String,
         nickname: String = nickname(),
+        asRemote: Boolean = false,
     ): SwitchPartyResult = switchMutex.withLock {
         withContext(Dispatchers.IO) {
             val who = identity(nickname)
@@ -932,7 +956,10 @@ object ListenTogether {
             val targetJoinResult = runCatching {
                 post(
                     "$targetBase/api/parties/$cleanedTargetCode/join",
-                    JoinRequest(who.userId, who.deviceId, who.name, who.avatar),
+                    JoinRequest(
+                        who.userId, who.deviceId, who.name, who.avatar,
+                        role = if (asRemote) PartyMember.ROLE_REMOTE else null,
+                    ),
                 )
             }
 
@@ -1241,6 +1268,9 @@ object ListenTogether {
     private suspend fun DefaultClientWebSocketSession.reportLoop() {
         while (true) {
             delay(REPORT_INTERVAL_MS)
+            // The clock sends its real playhead through [reportMeasured]
+            // instead, and a remote has no playhead to speak of.
+            if (_state.value.isClock || _state.value.isRemote) continue
             val position = partyPositionMs() ?: continue
             val frame = buildJsonObject {
                 put("type", "report")
@@ -1249,6 +1279,28 @@ object ListenTogether {
             }
             runCatching { send(Frame.Text(frame.toString())) }
         }
+    }
+
+    /**
+     * Where this device's player really is, for the clock to report.
+     *
+     * Stamped with the server-clock instant it was read at, so the time the
+     * frame spends in flight does not count as drift. Sent only by the clock
+     * and only once the offset is measured: without one the stamp would be a
+     * guess, and the server would move the whole party onto it.
+     */
+    fun reportMeasured(videoId: String, positionMs: Long) {
+        val state = _state.value
+        if (!state.isClock || !state.clockSynced) return
+        val atMs = clock.serverNowMs() ?: return
+        send(buildJsonObject {
+            put("type", "report")
+            put("measured", true)
+            put("videoId", videoId)
+            put("positionMs", positionMs)
+            put("atMs", atMs)
+            put("isPlaying", true)
+        })
     }
 
     private fun onFrame(text: String) {

@@ -187,6 +187,9 @@ class PartySync(
     /** When the player may next be seeked for drift, having just been. */
     private var driftCooldownUntilMs = 0L
 
+    /** When this device, as the party's clock, last reported its playhead. */
+    private var lastClockReportMs = 0L
+
     private var lastPartyCode: String? = null
 
     fun start() {
@@ -251,6 +254,9 @@ class PartySync(
     fun onLocalIntent() {
         val party = ListenTogether.state.value
         if (!party.inParty) return
+        // A remote's controls go straight to the party from PartyRemotePlayer;
+        // nothing done to this device's own player is the party's business.
+        if (party.isRemote) return
         // Nothing this device does while the host holds control is the party's
         // business. [publish] works by diffing this player against the party's
         // state, so without this an unrelated intent arriving later would read
@@ -421,6 +427,7 @@ class PartySync(
     fun shouldDeferPlay(): Boolean {
         val party = ListenTogether.state.value
         if (!party.inParty || party.connection != ListenTogether.Connection.LIVE) return false
+        if (party.isRemote) return false
         if (!party.clockSynced) return false
         // Already going, so there is nothing to hold back: `play()` on a player
         // that never stopped does nothing anywhere, and swallowing it here made
@@ -488,6 +495,15 @@ class PartySync(
         // Before any of the early returns below, so a local pause cannot
         // outlive the thing it was held against.
         clearLocalPauseIfFreed(party)
+        // A remote plays nothing. Whatever this device had going when it
+        // joined stops, and stays stopped: the party is coming out of somebody
+        // else's speaker, and this phone is only the buttons for it.
+        if (party.isRemote) {
+            deferredPlayPending = false
+            startJob?.cancel()
+            player()?.takeIf { it.playWhenReady }?.pause()
+            return
+        }
         if (SystemClock.elapsedRealtime() < reconcileQuietUntilMs) return
         // Another app has the audio. Following the party from here means seeking
         // this player into place and pressing play, which takes the audio back
@@ -619,11 +635,28 @@ class PartySync(
             lastTrackId = track.videoId
             lastIsPlaying = target.isPlaying
 
-            if (isPlaybackAnchorChanged && abs(drift) > ALIGN_TOLERANCE_MS) {
+            // The clock is what the party is re-anchored onto, so a small
+            // difference here is the party catching up with this device, not
+            // this device being behind; only a real control moves it.
+            val alignTolerance = if (party.isClock) DRIFT_LIMIT_MS else ALIGN_TOLERANCE_MS
+            if (isPlaybackAnchorChanged && abs(drift) > alignTolerance) {
                 Log.i(TAG, "aligning ${drift}ms onto party control ${target.seq}")
                 exo.seekTo(want)
                 return
             }
+        }
+        // The clock never corrects towards the party; it tells the party where
+        // it really is and the server moves everyone else. Seeking here would
+        // skip this device's own audio forward to an ideal nobody is hearing,
+        // which is exactly what the party's remotes would then show.
+        if (party.isClock) {
+            driftStrikes = 0
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastClockReportMs >= CLOCK_REPORT_MS) {
+                lastClockReportMs = now
+                ListenTogether.reportMeasured(track.videoId, exo.currentPosition)
+            }
+            return
         }
         if (abs(drift) <= DRIFT_LIMIT_MS) {
             driftStrikes = 0
@@ -1036,6 +1069,13 @@ class PartySync(
          * fine, a party seeking every 1.4s is not listenable.
          */
         const val DRIFT_COOLDOWN_MS = 6_000L
+
+        /**
+         * How often the clock reports its real playhead. The server only acts
+         * on a report more than a second out, so this bounds how long a stall
+         * on the clock goes unnoticed by everybody following it.
+         */
+        const val CLOCK_REPORT_MS = 2_000L
 
         /** While paused there is nothing to hear, so the playhead can be exact. */
         const val PAUSED_TOLERANCE_MS = 400L

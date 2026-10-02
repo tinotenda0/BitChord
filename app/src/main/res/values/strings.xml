@@ -951,6 +951,10 @@
     <string name="listen_together_activity_updated">Updated the party</string>
     <string name="listen_together_join">Join a party</string>
     <string name="listen_together_join_action">Join</string>
+    <string name="listen_together_join_as_remote">Join as a remote</string>
+    <string name="listen_together_join_as_remote_footer">Control the host’s music from this phone without playing it here.</string>
+    <string name="listen_together_remote_badge">Remote</string>
+    <string name="listen_together_you_are_remote">You’re a remote. The music plays on the host’s device, and this phone only controls it.</string>
     <string name="listen_together_code_hint">Six letters or digits</string>
     <string name="listen_together_code">Party code</string>
     <string name="listen_together_code_footer">Read it out or send it. O and I aren’t used, so an “oh” is always a zero.</string>

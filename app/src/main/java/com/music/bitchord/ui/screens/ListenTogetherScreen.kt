@@ -343,6 +343,47 @@ fun ListenTogetherScreen(
         )
     }
 
+    /** Joins the party in the confirm sheet, as a speaker or as a remote. */
+    fun joinPreviewed(open: PartySheet.Confirm, asRemote: Boolean) {
+        busy = true
+        failure = null
+        scope.launch {
+            // A server named on the invite itself always wins,
+            // whether this device is idle or already live: it
+            // is the one place the target the preview came
+            // from is actually known. Otherwise, already being
+            // in a party means a switch, which keeps this
+            // device where it is if the new party turns it
+            // away.
+            val problem = if (open.server != null || state.inParty) {
+                val target = ListenTogether.resolveSwitchTarget(open.server, customServer)
+                when (
+                    val switched = ListenTogether.switchPartyWithRecovery(
+                        target,
+                        open.preview.code,
+                        nickname,
+                        asRemote,
+                    )
+                ) {
+                    is ListenTogether.SwitchPartyResult.Success -> null
+                    is ListenTogether.SwitchPartyResult.TargetFailedRecovered ->
+                        switched.targetError
+                    is ListenTogether.SwitchPartyResult.TargetFailedNoParty ->
+                        switched.targetError
+                }
+            } else {
+                ListenTogether.joinParty(open.preview.code, nickname, asRemote)
+                    .exceptionOrNull()?.message
+            }
+            failure = problem
+            busy = false
+            if (problem == null) {
+                codeInput = ""
+                sheet = null
+            }
+        }
+    }
+
     sheet?.let { open ->
         ModalBottomSheet(
             onDismissRequest = {
@@ -411,44 +452,8 @@ fun ListenTogetherScreen(
                         sheet = null
                         failure = null
                     },
-                    onJoin = {
-                        busy = true
-                        failure = null
-                        scope.launch {
-                            // A server named on the invite itself always wins,
-                            // whether this device is idle or already live: it
-                            // is the one place the target the preview came
-                            // from is actually known. Otherwise, already being
-                            // in a party means a switch, which keeps this
-                            // device where it is if the new party turns it
-                            // away.
-                            val problem = if (open.server != null || state.inParty) {
-                                val target = ListenTogether.resolveSwitchTarget(open.server, customServer)
-                                when (
-                                    val switched = ListenTogether.switchPartyWithRecovery(
-                                        target,
-                                        open.preview.code,
-                                        nickname,
-                                    )
-                                ) {
-                                    is ListenTogether.SwitchPartyResult.Success -> null
-                                    is ListenTogether.SwitchPartyResult.TargetFailedRecovered ->
-                                        switched.targetError
-                                    is ListenTogether.SwitchPartyResult.TargetFailedNoParty ->
-                                        switched.targetError
-                                }
-                            } else {
-                                ListenTogether.joinParty(open.preview.code, nickname)
-                                    .exceptionOrNull()?.message
-                            }
-                            failure = problem
-                            busy = false
-                            if (problem == null) {
-                                codeInput = ""
-                                sheet = null
-                            }
-                        }
-                    },
+                    onJoin = { joinPreviewed(open, false) },
+                    onJoinAsRemote = { joinPreviewed(open, true) },
                 )
 
                 PartySheet.Invite -> InviteSheet(
@@ -879,10 +884,22 @@ private fun InAParty(
 
     NowPlayingInTheParty(state)
 
+    if (state.isRemote) {
+        Text(
+            text = stringResource(R.string.listen_together_you_are_remote),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
+        )
+    }
+
+    // Remotes play nothing and take no seat, so the count is of speakers: it is
+    // the number the party's size limits.
+    val speakers = state.members.count { !it.isRemote }
     SettingsGroup(
         header = stringResource(
             R.string.listen_together_listening,
-            state.members.size,
+            speakers,
             state.maxMembers,
         ),
         footer = stringResource(R.string.listen_together_members_footer, state.maxMembers),
@@ -900,7 +917,7 @@ private fun InAParty(
                     )
                     Text(stringResource(R.string.listen_together_host_controls), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                TextButton(onClick = { onSetCapacity(state.maxMembers - 1) }, enabled = state.maxMembers > maxOf(2, state.members.size)) { Text("−", color = MaterialTheme.colorScheme.onSurface) }
+                TextButton(onClick = { onSetCapacity(state.maxMembers - 1) }, enabled = state.maxMembers > maxOf(2, speakers)) { Text("−", color = MaterialTheme.colorScheme.onSurface) }
                 Text("${state.maxMembers}", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface, modifier = Modifier.width(28.dp), textAlign = TextAlign.Center)
                 TextButton(onClick = { onSetCapacity(state.maxMembers + 1) }, enabled = state.maxMembers < 10) { Text("+", color = MaterialTheme.colorScheme.onSurface) }
             }
@@ -1070,6 +1087,10 @@ private fun MemberRow(member: PartyMember, isYou: Boolean, canKick: Boolean = fa
                 if (isYou) {
                     Spacer(Modifier.width(8.dp))
                     Badge(stringResource(R.string.listen_together_you))
+                }
+                if (member.isRemote) {
+                    Spacer(Modifier.width(8.dp))
+                    Badge(stringResource(R.string.listen_together_remote_badge))
                 }
             }
             // "Away" rather than "offline": the slot is still theirs, and the

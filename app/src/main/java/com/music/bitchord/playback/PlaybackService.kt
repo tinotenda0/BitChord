@@ -670,6 +670,12 @@ class PlaybackService : MediaLibraryService() {
      */
     private var partySync: PartySync? = null
 
+    /** The session's player for this device's own audio. @see attachLocalPlayer */
+    private var localSessionPlayer: Player? = null
+
+    /** Stands in for [localSessionPlayer] while this device is a party remote. */
+    private var remotePlayer: PartyRemotePlayer? = null
+
     /** Commands exposed as the secondary buttons on the media notification. */
     private val favoriteCommand = SessionCommand(ACTION_TOGGLE_FAVORITE, Bundle.EMPTY)
     private val autoplayCommand = SessionCommand(ACTION_TOGGLE_AUTOPLAY, Bundle.EMPTY)
@@ -1591,21 +1597,65 @@ class PlaybackService : MediaLibraryService() {
         crossfade = controller
         controller.start()
 
-        mediaSession = MediaLibrarySession.Builder(
-            this,
-            SessionPlayer(
-                exoPlayer,
-                controller,
-                onUserIntent = { partySync?.onLocalIntent() },
+        val sessionPlayer = SessionPlayer(
+            exoPlayer,
+            controller,
+            onUserIntent = { partySync?.onLocalIntent() },
             deferPlayToParty = { partySync?.shouldDeferPlay() == true },
             lockedTransport = { playing -> partySync?.onLockedTransport(playing) == true },
-            ) { lastPublishedSubtitle },
+        ) { lastPublishedSubtitle }
+        localSessionPlayer = sessionPlayer
+        mediaSession = MediaLibrarySession.Builder(
+            this,
+            sessionPlayer,
             MediaLibraryCallback(),
         )
             .setId(SESSION_ID)
             .setSessionActivity(sessionActivity())
             .build()
         refreshCustomLayouts()
+        followRemoteRole()
+    }
+
+    /**
+     * Puts a new player for this device's own audio in the session, unless the
+     * device is a party remote, in which case it is kept and attached when the
+     * device stops being one. The crossfade and quality swaps replace the local
+     * player mid-party, and must not knock the remote out of the session.
+     */
+    private fun attachLocalPlayer(sessionPlayer: Player) {
+        localSessionPlayer = sessionPlayer
+        if (remotePlayer == null) mediaSession?.player = sessionPlayer
+    }
+
+    /**
+     * Swaps the session over to [PartyRemotePlayer] while this device is a
+     * party remote, and back to its own player when it stops being one, by
+     * leaving, switching role or the party ending. Every surface that talks to
+     * the session (the app, the notification, a headset) follows without
+     * knowing anything changed.
+     */
+    private fun followRemoteRole() {
+        scope.launch {
+            ListenTogether.state
+                .map { it.isRemote }
+                .distinctUntilChanged()
+                .collect { remote ->
+                    val session = mediaSession ?: return@collect
+                    if (remote && remotePlayer == null) {
+                        player?.pause()
+                        val stand = PartyRemotePlayer(scope)
+                        remotePlayer = stand
+                        session.player = stand
+                    } else if (!remote) {
+                        val stand = remotePlayer ?: return@collect
+                        remotePlayer = null
+                        localSessionPlayer?.let { session.player = it }
+                        stand.release()
+                    }
+                    refreshCustomLayouts()
+                }
+        }
     }
 
     private fun createCrossfadeController() = CrossfadeController(
@@ -2148,13 +2198,13 @@ class PlaybackService : MediaLibraryService() {
         incoming.addListener(playbackListener)
         incoming.addAnalyticsListener(formatListener)
 
-        mediaSession?.player = SessionPlayer(
+        attachLocalPlayer(SessionPlayer(
             incoming,
             requireNotNull(crossfade),
             onUserIntent = { partySync?.onLocalIntent() },
             deferPlayToParty = { partySync?.shouldDeferPlay() == true },
             lockedTransport = { playing -> partySync?.onLockedTransport(playing) == true },
-        ) { lastPublishedSubtitle }
+        ) { lastPublishedSubtitle })
 
         incoming.volume = 1f
         outgoing.stop()
@@ -2551,13 +2601,13 @@ class PlaybackService : MediaLibraryService() {
         incoming.addListener(playbackListener)
         incoming.addAnalyticsListener(formatListener)
 
-        mediaSession?.player = SessionPlayer(
+        attachLocalPlayer(SessionPlayer(
             incoming,
             requireNotNull(crossfade),
             onUserIntent = { partySync?.onLocalIntent() },
             deferPlayToParty = { partySync?.shouldDeferPlay() == true },
             lockedTransport = { playing -> partySync?.onLockedTransport(playing) == true },
-        ) { lastPublishedSubtitle }
+        ) { lastPublishedSubtitle })
 
         // The queue moving on used to arrive here as an item transition on the
         // one player that owned the queue. It cannot any more — the incoming
@@ -5543,13 +5593,13 @@ class PlaybackService : MediaLibraryService() {
         val newCrossfade = createCrossfadeController()
         crossfade = newCrossfade
         newCrossfade.start()
-        mediaSession?.player = SessionPlayer(
+        attachLocalPlayer(SessionPlayer(
             newActive,
             newCrossfade,
             onUserIntent = { partySync?.onLocalIntent() },
             deferPlayToParty = { partySync?.shouldDeferPlay() == true },
             lockedTransport = { playing -> partySync?.onLockedTransport(playing) == true },
-        ) { lastPublishedSubtitle }
+        ) { lastPublishedSubtitle })
         applyOutputRoute()
         if (items.isNotEmpty()) newActive.prepare()
         newActive.playWhenReady = playWhenReady
@@ -6134,6 +6184,8 @@ class PlaybackService : MediaLibraryService() {
         audioManager?.unregisterAudioDeviceCallback(outputDeviceCallback)
         partySync?.stop()
         partySync = null
+        remotePlayer?.release()
+        remotePlayer = null
         player?.let(::savePlaybackState)
         // And to leave the widgets showing a play button. Nothing else reports a
         // swipe-away, so a widget left on the home screen would sit there with a
