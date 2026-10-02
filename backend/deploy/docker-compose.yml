@@ -18,11 +18,9 @@ services:
       JAM_MAX_REMOTES: "5"
       JAM_MAX_PARTIES: "50"
       JAM_CREATE_RATE_PER_MINUTE: "4"
-      # Connect checks logins against the family gateway on this same host,
-      # directly rather than back out through the tunnel and its bot filter.
-      JAM_GATEWAY_URL: "http://host.docker.internal:8000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      # Connect checks logins against the family gateway. Its public address,
+      # because the host's firewall does not let a container reach it locally.
+      JAM_GATEWAY_URL: "https://api.tinotenda.co"
     read_only: true
     security_opt:
       - no-new-privileges:true
