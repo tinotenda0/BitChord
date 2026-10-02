@@ -1122,7 +1122,9 @@ private fun BitChordApp(
                 ?: (0 until c.mediaItemCount).map { c.getMediaItemAt(it).toSong() }
             val currentIndex = c.currentMediaItemIndex
 
-            if (ListenTogether.state.value.inParty) {
+            // A jam's queue is everybody's, so a pick slots into it. Connect is
+            // this user's own music, played wherever: an ordinary play.
+            if (ListenTogether.state.value.inJam) {
                 val selectedSong = songs.getOrNull(index) ?: return@launch
                 val party = ListenTogether.state.value
                 val partyQueue = party.queue.items
@@ -2020,7 +2022,7 @@ private fun BitChordApp(
             ?: effectiveSong
         val playedBy = partyState
             .takeIf {
-                it.inParty && it.playback.track?.videoId == displayedSong.videoId
+                it.inJam && it.playback.track?.videoId == displayedSong.videoId
             }
             ?.playback
             ?.let { playback ->

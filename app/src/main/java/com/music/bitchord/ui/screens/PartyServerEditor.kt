@@ -149,7 +149,7 @@ fun PartyServerEditor(hazeState: HazeState, onDismiss: () -> Unit) {
         // Nothing to remove until there is one stored, and never while a party
         // is live on it: changing the address under a live membership would
         // leave this device holding a token for a server it no longer talks to.
-        onRemove = remove.takeIf { customServer.isNotBlank() && !party.inParty },
+        onRemove = remove.takeIf { customServer.isNotBlank() && !party.inJam },
         removeLabel = stringResource(R.string.listen_together_remove_server),
         onDismiss = onDismiss,
     )

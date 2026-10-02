@@ -1584,6 +1584,22 @@ class PlaybackService : MediaLibraryService() {
                 }
         }
         loadAutoplayForCurrentTrack()
+        // A Connect party starts with AutoPlay off, which this user never chose.
+        // The device that plays it brings its own preference in, once per
+        // arrival; after that the party's setting is the one every device
+        // toggles, as in a jam.
+        scope.launch {
+            ListenTogether.state
+                .map { if (it.isConnect && it.isClock) it.code + it.you?.memberId else null }
+                .distinctUntilChanged()
+                .collect { arrival ->
+                    if (arrival == null) return@collect
+                    val party = ListenTogether.state.value
+                    if (party.playback.autoplayEnabled != AppSettings.autoplay.value) {
+                        ListenTogether.setAutoplay(AppSettings.autoplay.value)
+                    }
+                }
+        }
 
         // Only the analytics listener reports the format the audio renderer was
         // configured with. Treated as a trigger rather than a source: the
@@ -2462,7 +2478,7 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun topUpEnabled(party: ListenTogether.State): Boolean =
         autoplayEnabled(party) ||
-            (!party.inParty && com.music.bitchord.gateway.SurpriseMe.isSurpriseMe(player?.currentMediaItem?.toSong()))
+            (party.ownsQueue && com.music.bitchord.gateway.SurpriseMe.isSurpriseMe(player?.currentMediaItem?.toSong()))
 
     /**
      * Takes back what AutoPlay queued and hasn't played yet — what switching
@@ -2628,6 +2644,11 @@ class PlaybackService : MediaLibraryService() {
         // AutoPlay's refill on the same track-change path as the ordinary
         // player transition: otherwise the initial suggestions are consumed
         // one by one and a long background session eventually runs dry.
+        //
+        // The party has to hear about it for the same reason. Jams never mix,
+        // but Connect does, and without this the party went on naming the old
+        // song until the next tick hauled the player back onto it.
+        partySync?.onLocalIntent()
         autoplayLoadJob?.cancel()
         autoplayLoadJob = null
         autoplaySeed = null
@@ -4076,7 +4097,7 @@ class PlaybackService : MediaLibraryService() {
             // fetch Automix makes that neither of those two gates, and a
             // megabyte pulled for an analysis that will not run is a megabyte
             // taken off the connection the party is syncing over.
-            if (!ListenTogether.state.value.inParty) {
+            if (!ListenTogether.state.value.inJam) {
                 launch(Dispatchers.IO) {
                     AudioCache.warmRange(Uri.parse(upgradedUri), 0, ANALYSIS_HEAD_BYTES)
                 }
@@ -4907,7 +4928,7 @@ class PlaybackService : MediaLibraryService() {
 
     /** Serialize only the bounded window needed for a future cold-start resume. */
     private fun saveQueueSnapshot(player: ExoPlayer) {
-        if (ListenTogether.state.value.inParty) return
+        if (!ListenTogether.state.value.ownsQueue) return
         if (player.mediaItemCount == 0) {
             persistedQueueStart = 0
             LastPlayed.clear()
@@ -4925,7 +4946,7 @@ class PlaybackService : MediaLibraryService() {
 
     /** Make the newly installed radio queue the durable cold-start boundary. */
     private fun saveQueueSnapshotImmediately(player: ExoPlayer) {
-        if (ListenTogether.state.value.inParty) return
+        if (!ListenTogether.state.value.ownsQueue) return
         if (player.mediaItemCount == 0) {
             persistedQueueStart = 0
             LastPlayed.clearImmediately()

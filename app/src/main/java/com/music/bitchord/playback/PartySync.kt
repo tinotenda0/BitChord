@@ -191,6 +191,7 @@ class PartySync(
     private var lastClockReportMs = 0L
 
     private var lastPartyCode: String? = null
+    private var lastPartyWasConnect = false
 
     fun start() {
         jobs += scope.launch {
@@ -202,14 +203,18 @@ class PartySync(
                 .distinctUntilChanged()
                 .collect { key ->
                     if (key.code != lastPartyCode) {
-                        val wasInParty = lastPartyCode != null
-                        val nowInParty = key.code != null
+                        // Only a jam borrows this device's player: Connect plays
+                        // this user's own music, so there is nothing to put
+                        // aside on the way in or to give back on the way out.
+                        // Read by code rather than by in/out, because going from
+                        // Connect straight into a jam (or back) can change the
+                        // code without ever passing through "no party".
+                        val wasJam = lastPartyCode != null && !lastPartyWasConnect
+                        val party = ListenTogether.state.value
                         lastPartyCode = key.code
-                        if (!wasInParty && nowInParty) {
-                            onEnteredParty()
-                        } else if (wasInParty && !nowInParty) {
-                            onLeftParty()
-                        }
+                        lastPartyWasConnect = party.isConnect
+                        if (wasJam) onLeftParty() else resetFollowing()
+                        if (key.code != null && !party.isConnect) onEnteredParty()
                     }
                     // Every control this device sent has come back around, so
                     // the party now describes the world the user made — or
@@ -231,6 +236,9 @@ class PartySync(
                 // what puts it back. Idempotent — it returns immediately when a
                 // socket is already up, or when there is no party.
                 if (ListenTogether.state.value.inParty) ListenTogether.ensureConnected()
+                // Not in anything: sit in this account's Connect party, so its
+                // other devices can see and drive this one. Backs off by itself.
+                else ListenTogether.ensureHome()
                 reconcile()
             }
         }
@@ -427,7 +435,10 @@ class PartySync(
     fun shouldDeferPlay(): Boolean {
         val party = ListenTogether.state.value
         if (!party.inParty || party.connection != ListenTogether.Connection.LIVE) return false
-        if (party.isRemote) return false
+        // Connect has one speaker, this one, and nobody to start in step with:
+        // holding the press back for the party's lead would only make every
+        // play on every device of this account a third of a second late.
+        if (party.isRemote || party.isConnect) return false
         if (!party.clockSynced) return false
         // Already going, so there is nothing to hold back: `play()` on a player
         // that never stopped does nothing anywhere, and swallowing it here made
@@ -940,11 +951,15 @@ class PartySync(
         PartyPersonalQueueStash.stashFromPlayer(exo)
     }
 
-    private fun onLeftParty() {
-        Log.i(TAG, "left party, restoring personal queue if stashed")
+    private fun resetFollowing() {
         loadingVideoId = null
         focusLost = false
         rejoining = false
+    }
+
+    private fun onLeftParty() {
+        Log.i(TAG, "left party, restoring personal queue if stashed")
+        resetFollowing()
         val stashed = PartyPersonalQueueStash.load()
         if (stashed != null) {
             val exo = player() ?: return

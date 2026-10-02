@@ -36,6 +36,7 @@ import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudOff
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Devices
 import androidx.compose.material.icons.rounded.Dns
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Login
@@ -355,7 +356,7 @@ fun ListenTogetherScreen(
             // in a party means a switch, which keeps this
             // device where it is if the new party turns it
             // away.
-            val problem = if (open.server != null || state.inParty) {
+            val problem = if (open.server != null || state.inJam) {
                 val target = ListenTogether.resolveSwitchTarget(open.server, customServer)
                 when (
                     val switched = ListenTogether.switchPartyWithRecovery(
@@ -500,7 +501,7 @@ fun ListenTogetherScreen(
             }
         }
 
-        if (!state.inParty) {
+        if (!state.inJam) {
             PartyLanding(
                 avatarUrl = ListenTogether.myAvatarUrl(),
                 enabled = signedIn && ListenTogether.hasServer && !busy,
@@ -514,6 +515,7 @@ fun ListenTogetherScreen(
                     sheet = PartySheet.JoinCode
                 },
             )
+            ConnectSetting()
         } else {
             InAParty(
                 state = state,
@@ -584,7 +586,7 @@ fun ListenTogetherScreen(
                 // membership would leave this device holding a token for a
                 // server it no longer talks to, and the party unable to say
                 // why it went quiet.
-                enabled = !state.inParty && !busy,
+                enabled = !state.inJam && !busy,
                 onClick = onEditServer,
                 trailing = if (busy) ({ Spinner() }) else null,
             )
@@ -1157,4 +1159,35 @@ private fun elapsed(ms: Long): String {
     val minutes = total / 60
     val seconds = total % 60
     return "%d:%02d".format(minutes, seconds)
+}
+
+/**
+ * Whether this device joins its account's other devices, which is how they find
+ * each other without a code. Shown on the landing rather than buried in
+ * settings because it is the other half of what this page is about.
+ */
+@Composable
+private fun ConnectSetting() {
+    val enabled by ListenTogether.connectEnabled.collectAsStateWithLifecycle()
+    val signedIn by com.music.bitchord.gateway.Gateway.username.collectAsStateWithLifecycle()
+    SettingsGroup(
+        footer = if (signedIn.isEmpty()) stringResource(R.string.connect_needs_gateway) else null,
+    ) {
+        SettingsRow(
+            icon = Icons.Rounded.Devices,
+            title = stringResource(R.string.connect_setting),
+            subtitle = stringResource(R.string.connect_setting_subtitle),
+            trailing = {
+                Switch(
+                    checked = enabled,
+                    onCheckedChange = ListenTogether::setConnectEnabled,
+                    colors = SwitchDefaults.colors(
+                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                        checkedBorderColor = MaterialTheme.colorScheme.primary,
+                    ),
+                )
+            },
+            onClick = { ListenTogether.setConnectEnabled(!enabled) },
+        )
+    }
 }

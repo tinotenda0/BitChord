@@ -1295,4 +1295,18 @@
     <string name="card_songs_format">%1$s songs</string>
 
 
+    <string name="listen_together_join_as_remote">เข้าร่วมเป็นรีโมต</string>
+    <string name="listen_together_join_as_remote_footer">ควบคุมเพลงของโฮสต์จากโทรศัพท์นี้โดยไม่เล่นที่นี่</string>
+    <string name="listen_together_remote_badge">รีโมต</string>
+    <string name="listen_together_you_are_remote">คุณเป็นรีโมต เพลงเล่นบนอุปกรณ์ของโฮสต์ และโทรศัพท์นี้ใช้ควบคุมเท่านั้น</string>
+    <string name="connect_devices_title">อุปกรณ์</string>
+    <string name="connect_playing_on">กำลังเล่นบน %1$s</string>
+    <string name="connect_this_phone">%1$s (โทรศัพท์นี้)</string>
+    <string name="connect_playing">กำลังเล่น</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">เอาต์พุตเสียงของโทรศัพท์นี้</string>
+    <string name="connect_setting">เชื่อมต่อกับอุปกรณ์ของฉัน</string>
+    <string name="connect_setting_subtitle">อุปกรณ์ที่ลงชื่อเข้าใช้ของคุณจะค้นหากันเอง: ควบคุมเครื่องหนึ่งจากอีกเครื่อง หรือย้ายเพลงระหว่างกัน</string>
+    <string name="connect_needs_gateway">ลงชื่อเข้าใช้บัญชีของคุณในการตั้งค่าเพื่อใช้ Connect</string>
 </resources>

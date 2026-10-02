@@ -1290,4 +1290,18 @@
 
 
 
+    <string name="listen_together_join_as_remote">リモコンとして参加</string>
+    <string name="listen_together_join_as_remote_footer">この端末で再生せずに、ホストの音楽を操作します。</string>
+    <string name="listen_together_remote_badge">リモコン</string>
+    <string name="listen_together_you_are_remote">あなたはリモコンです。音楽はホストの端末で再生され、この端末は操作するだけです。</string>
+    <string name="connect_devices_title">デバイス</string>
+    <string name="connect_playing_on">%1$s で再生中</string>
+    <string name="connect_this_phone">%1$s（この端末）</string>
+    <string name="connect_playing">再生中</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">この端末の音声出力</string>
+    <string name="connect_setting">自分のデバイスに接続</string>
+    <string name="connect_setting_subtitle">サインインしているデバイス同士が互いを見つけます。別のデバイスから操作したり、音楽をデバイス間で移動したりできます。</string>
+    <string name="connect_needs_gateway">Connect を使うには、設定でアカウントにサインインしてください。</string>
 </resources>

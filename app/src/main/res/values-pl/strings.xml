@@ -1347,4 +1347,18 @@
 
 
 
+    <string name="listen_together_join_as_remote">Dołącz jako pilot</string>
+    <string name="listen_together_join_as_remote_footer">Steruj muzyką gospodarza z tego telefonu, nie odtwarzając jej tutaj.</string>
+    <string name="listen_together_remote_badge">Pilot</string>
+    <string name="listen_together_you_are_remote">Jesteś pilotem. Muzyka gra na urządzeniu gospodarza, a ten telefon tylko nią steruje.</string>
+    <string name="connect_devices_title">Urządzenia</string>
+    <string name="connect_playing_on">Odtwarzanie na %1$s</string>
+    <string name="connect_this_phone">%1$s (ten telefon)</string>
+    <string name="connect_playing">Odtwarzanie</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">Wyjście audio tego telefonu</string>
+    <string name="connect_setting">Połącz z moimi urządzeniami</string>
+    <string name="connect_setting_subtitle">Twoje zalogowane urządzenia znajdują się nawzajem: steruj jednym z drugiego lub przenoś między nimi muzykę.</string>
+    <string name="connect_needs_gateway">Zaloguj się na swoje konto w Ustawieniach, aby korzystać z Connect.</string>
 </resources>

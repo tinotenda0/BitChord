@@ -166,6 +166,8 @@ object ListenTogether {
 
     data class State(
         val code: String? = null,
+        /** [KIND_JAM] or [KIND_CONNECT]. See [isConnect]. */
+        val kind: String = KIND_JAM,
         val you: PartyMember? = null,
         val members: List<PartyMember> = emptyList(),
         val maxMembers: Int = 5,
@@ -218,6 +220,32 @@ object ListenTogether {
          */
         val isClock: Boolean
             get() = inParty && you != null && playback.clockMemberId == you.memberId
+
+        /**
+         * In this account's Connect party: its own devices, joined without a
+         * code, with one of them playing. Most of the time a signed-in device is
+         * in one, so this is the default state, and nearly every rule written
+         * for a jam (several speakers kept in step, a queue that belongs to
+         * everybody) does not apply to it. See [inJam].
+         */
+        val isConnect: Boolean
+            get() = inParty && kind == KIND_CONNECT
+
+        /** In a jam: a party joined with a code, shared with other people. */
+        val inJam: Boolean
+            get() = inParty && kind != KIND_CONNECT
+
+        /**
+         * Whether the queue on this device's own player is this user's own
+         * music: outside a party, or as the device playing Connect. Not in a jam,
+         * where it is everybody's, nor as a remote, whose player plays nothing.
+         */
+        val ownsQueue: Boolean
+            get() = !inParty || (isConnect && !isRemote)
+
+        /** The Connect device playing right now, or null. */
+        val output: PartyMember?
+            get() = if (isConnect) members.firstOrNull { it.isHost && !it.isRemote } else null
     }
 
     /** A refusal from the server, carrying the machine-readable half. */
@@ -646,10 +674,15 @@ object ListenTogether {
             defaultServer
         }
 
+        appContext = context.applicationContext
+        _connectEnabled.value = prefs.getBoolean(KEY_CONNECT, true)
         val code = prefs.getString(KEY_CODE, null)
         val saved = prefs.getString(KEY_TOKEN, null)
         prefs.edit().remove(KEY_CODE).remove(KEY_TOKEN).apply()
-        if (!code.isNullOrBlank() && !saved.isNullOrBlank()) {
+        // Not for an account's Connect party. Leaving it would hand playback to
+        // another device and pause it, every time this process started; the
+        // device comes back into it in a moment as the same member anyway.
+        if (!code.isNullOrBlank() && !saved.isNullOrBlank() && !code.startsWith("~")) {
             releaseStaleSlot(code, saved)
         }
 
@@ -744,9 +777,133 @@ object ListenTogether {
         connect()
     }
 
+    // ------------------------------------------------------------ Connect --
+
+    /** A handshake refused because the membership is gone, not because the network is. */
+    private val DEAD_MEMBERSHIP = Regex("""(401|404)""")
+
+    /** Lets go of a membership the server has already forgotten, without telling it. */
+    private fun forgetMembership() {
+        token = null
+        activePartyServerBase = null
+        prefs.edit().remove(KEY_CODE).remove(KEY_TOKEN).apply()
+        clock.reset()
+        _state.value = State()
+    }
+
+    private lateinit var appContext: Context
+
+    private val _connectEnabled = MutableStateFlow(true)
+
+    /**
+     * Whether this device sits in its account's Connect party whenever it is
+     * not in a jam. On by default: that is what makes the account's devices
+     * find each other without anybody doing anything.
+     */
+    val connectEnabled: StateFlow<Boolean> = _connectEnabled.asStateFlow()
+
+    private var homeJob: Job? = null
+    private var homeRetryAtMs = 0L
+    private var homeFailures = 0
+
+    fun setConnectEnabled(enabled: Boolean) {
+        _connectEnabled.value = enabled
+        prefs.edit().putBoolean(KEY_CONNECT, enabled).apply()
+        homeRetryAtMs = 0L
+        homeFailures = 0
+        if (!enabled && _state.value.isConnect) {
+            scope.launch { leaveParty() }
+        }
+    }
+
+    /**
+     * Puts this device in its account's Connect party, if it should be in one
+     * and is not in anything yet. Called on every tick of the playback service,
+     * so it is cheap when there is nothing to do and backs off when the server
+     * will not have it, rather than asking every 700ms.
+     */
+    fun ensureHome() {
+        if (_state.value.inParty || !_connectEnabled.value) return
+        if (!com.music.bitchord.gateway.Gateway.signedIn || !this::appContext.isInitialized) return
+        if (homeJob?.isActive == true) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now < homeRetryAtMs) return
+        homeJob = scope.launch {
+            val result = runCatching {
+                switchMutex.withLock {
+                    // Something else (a jam) got in while this waited.
+                    if (!_state.value.inParty) connectHome(resolveHttpBase(effectiveIdleServerBase()))
+                }
+            }
+            result.onSuccess {
+                homeFailures = 0
+                homeRetryAtMs = 0L
+            }.onFailure { failure ->
+                homeFailures++
+                val code = (failure as? PartyException)?.code
+                val wait = when (code) {
+                    // Not a blip: this server has no Connect, or the login is
+                    // wrong. Ask again only now and then.
+                    "connect_disabled", "bad_login", "http_404" -> 30 * 60_000L
+                    else -> minOf(5 * 60_000L, 15_000L shl minOf(homeFailures - 1, 5))
+                }
+                homeRetryAtMs = android.os.SystemClock.elapsedRealtime() + wait
+                Log.i(TAG, "connect not joined ($code), retrying in ${wait / 1000}s: ${redact(failure.message)}")
+            }
+        }
+    }
+
+    private suspend fun connectHome(serverBase: String) {
+        if (serverBase.isBlank()) throw PartyException("no_server", "No party server set.")
+        val (user, gatewayToken, salt) = com.music.bitchord.gateway.Gateway.tokenLogin()
+            ?: throw PartyException("not_signed_in", "Sign in to the gateway to use Connect.")
+        val who = identity()
+        val response = http.post("$serverBase/api/connect") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                ConnectRequest(
+                    gatewayUser = user,
+                    gatewayToken = gatewayToken,
+                    gatewaySalt = salt,
+                    deviceKey = DeviceIdentity.key(appContext),
+                    app = DeviceIdentity.app,
+                    deviceName = DeviceIdentity.name(appContext),
+                    displayName = who?.name ?: user,
+                    avatarUrl = who?.avatar,
+                ),
+            )
+        }
+        if (!response.status.isSuccess()) throw response.toPartyException()
+        val membership: PartyMembership = response.body()
+
+        withContext(NonCancellable) {
+            activePartyServerBase = serverBase
+            token = membership.token
+            prefs.edit()
+                .putString(KEY_CODE, membership.code)
+                .putString(KEY_TOKEN, membership.token)
+                .apply()
+            clock.reset()
+            _state.value = State(
+                code = membership.code,
+                kind = membership.party.kind,
+                you = membership.you,
+                members = membership.party.members,
+                maxMembers = membership.party.maxMembers,
+                playback = membership.party.playback,
+                queue = membership.party.queue,
+                connection = Connection.CONNECTING,
+            )
+        }
+        connect()
+    }
+
     // ------------------------------------------------------------ joining --
 
     suspend fun createParty(nickname: String = nickname(), maxMembers: Int = 5): Result<String> = switchMutex.withLock {
+        // Starting a jam takes this device out of Connect for its duration;
+        // leaving the jam brings it back. See [ensureHome].
+        if (_state.value.isConnect) leaveLocked()
         val primary = effectiveIdleServerBase()
         val primaryNormalized = resolveHttpBase(primary)
         val attempt = runCatching {
@@ -798,6 +955,7 @@ object ListenTogether {
             clock.reset()
             _state.value = State(
                 code = membership.code,
+                kind = membership.party.kind,
                 you = membership.you,
                 members = membership.party.members,
                 maxMembers = membership.party.maxMembers,
@@ -828,6 +986,7 @@ object ListenTogether {
         asRemote: Boolean = false,
     ): Result<String> = switchMutex.withLock {
         val targetServer = resolveHttpBase(effectiveIdleServerBase())
+        if (_state.value.isConnect) leaveLocked()
         runCatching {
             doJoinOnServer(targetServer, code, nickname, asRemote)
         }.onFailure { failure ->
@@ -862,6 +1021,7 @@ object ListenTogether {
             clock.reset()
             _state.value = State(
                 code = membership.code,
+                kind = membership.party.kind,
                 you = membership.you,
                 members = membership.party.members,
                 maxMembers = membership.party.maxMembers,
@@ -1002,6 +1162,7 @@ object ListenTogether {
                 clock.reset()
                 _state.value = State(
                     code = membership.code,
+                    kind = membership.party.kind,
                     you = membership.you,
                     members = membership.party.members,
                     maxMembers = membership.party.maxMembers,
@@ -1019,7 +1180,9 @@ object ListenTogether {
     }
 
     /** Give up this device's slot. The party carries on without it. */
-    suspend fun leaveParty() = switchMutex.withLock {
+    suspend fun leaveParty() = switchMutex.withLock { leaveLocked() }
+
+    private suspend fun leaveLocked() {
         withContext(Dispatchers.IO) {
             val code = _state.value.code
             val held = token
@@ -1087,6 +1250,9 @@ object ListenTogether {
     fun setMaxMembers(value: Int) = control("setMaxMembers") { put("maxMembers", value) }
 
     fun kick(memberId: String) = control("kick") { put("memberId", memberId) }
+
+    /** Connect only: move playback to another of this account's devices. */
+    fun transfer(memberId: String) = control("transfer") { put("memberId", memberId) }
 
     fun setAutoplay(enabled: Boolean) = control("setAutoplay") { put("enabled", enabled) }
 
@@ -1210,6 +1376,15 @@ object ListenTogether {
                 throw cancelled
             } catch (failure: Exception) {
                 Log.w(TAG, "party socket dropped: ${redact(failure.message)}")
+                // Connect only: the server no longer knows this membership,
+                // which is what a redeploy does to every account party at once.
+                // Retrying the same token would be refused for ever; dropping
+                // it lets [ensureHome] sign straight back in as the same device.
+                if (_state.value.isConnect && failure.message?.let(DEAD_MEMBERSHIP::containsMatchIn) == true) {
+                    session = null
+                    forgetMembership()
+                    return
+                }
             } finally {
                 session = null
             }
@@ -1316,6 +1491,7 @@ object ListenTogether {
                 }
                 _state.update { it.copy(
                     code = party.code,
+                    kind = party.kind,
                     you = you ?: it.you,
                     members = party.members,
                     maxMembers = party.maxMembers,
@@ -1704,6 +1880,7 @@ object ListenTogether {
     private const val KEY_DEVICE = "device_id"
     private const val KEY_NICKNAME = "party_nickname"
     private const val KEY_KICKED = "party_kicked_until"
+    private const val KEY_CONNECT = "connect_enabled"
 
     /** How long a removal keeps this device out of that party. */
     private const val KICK_BLOCK_MS = 24L * 60 * 60 * 1000

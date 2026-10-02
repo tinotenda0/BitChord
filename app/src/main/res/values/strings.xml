@@ -954,6 +954,16 @@
     <string name="listen_together_join_as_remote">Join as a remote</string>
     <string name="listen_together_join_as_remote_footer">Control the host’s music from this phone without playing it here.</string>
     <string name="listen_together_remote_badge">Remote</string>
+    <string name="connect_devices_title">Devices</string>
+    <string name="connect_playing_on">Playing on %1$s</string>
+    <string name="connect_this_phone">%1$s (this phone)</string>
+    <string name="connect_playing">Playing</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">This phone’s audio output</string>
+    <string name="connect_setting">Connect to my devices</string>
+    <string name="connect_setting_subtitle">Your signed-in devices find each other: control one from another, or move the music between them.</string>
+    <string name="connect_needs_gateway">Sign in to your account in Settings to use Connect.</string>
     <string name="listen_together_you_are_remote">You’re a remote. The music plays on the host’s device, and this phone only controls it.</string>
     <string name="listen_together_code_hint">Six letters or digits</string>
     <string name="listen_together_code">Party code</string>

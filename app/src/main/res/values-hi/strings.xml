@@ -1309,4 +1309,18 @@
 
 
 
+    <string name="listen_together_join_as_remote">रिमोट के रूप में जुड़ें</string>
+    <string name="listen_together_join_as_remote_footer">होस्ट के संगीत को यहां चलाए बिना इस फ़ोन से नियंत्रित करें।</string>
+    <string name="listen_together_remote_badge">रिमोट</string>
+    <string name="listen_together_you_are_remote">आप रिमोट हैं। संगीत होस्ट के डिवाइस पर बजता है, यह फ़ोन सिर्फ़ उसे नियंत्रित करता है।</string>
+    <string name="connect_devices_title">डिवाइस</string>
+    <string name="connect_playing_on">%1$s पर चल रहा है</string>
+    <string name="connect_this_phone">%1$s (यह फ़ोन)</string>
+    <string name="connect_playing">चल रहा है</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">इस फ़ोन का ऑडियो आउटपुट</string>
+    <string name="connect_setting">मेरे डिवाइस से कनेक्ट करें</string>
+    <string name="connect_setting_subtitle">आपके साइन-इन किए गए डिवाइस एक-दूसरे को ढूंढ लेते हैं: एक को दूसरे से नियंत्रित करें या संगीत उनके बीच ले जाएं।</string>
+    <string name="connect_needs_gateway">Connect इस्तेमाल करने के लिए सेटिंग्स में अपने खाते में साइन इन करें।</string>
 </resources>

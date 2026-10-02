@@ -1289,4 +1289,18 @@
 
 
 
+    <string name="listen_together_join_as_remote">Gabung sebagai remote</string>
+    <string name="listen_together_join_as_remote_footer">Kendalikan musik host dari ponsel ini tanpa memutarnya di sini.</string>
+    <string name="listen_together_remote_badge">Remote</string>
+    <string name="listen_together_you_are_remote">Kamu adalah remote. Musik diputar di perangkat host, dan ponsel ini hanya mengendalikannya.</string>
+    <string name="connect_devices_title">Perangkat</string>
+    <string name="connect_playing_on">Diputar di %1$s</string>
+    <string name="connect_this_phone">%1$s (ponsel ini)</string>
+    <string name="connect_playing">Diputar</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">Output audio ponsel ini</string>
+    <string name="connect_setting">Hubungkan ke perangkat saya</string>
+    <string name="connect_setting_subtitle">Perangkat yang masuk ke akunmu saling menemukan: kendalikan satu dari yang lain, atau pindahkan musik di antaranya.</string>
+    <string name="connect_needs_gateway">Masuk ke akunmu di Setelan untuk memakai Connect.</string>
 </resources>

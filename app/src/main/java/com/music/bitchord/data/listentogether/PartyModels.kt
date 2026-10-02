@@ -52,6 +52,13 @@ data class PartyMember(
      * which is what everyone was.
      */
     val role: String = ROLE_SPEAKER,
+    /**
+     * Connect only: which phone ([deviceKey], shared by every build on it), which
+     * build ([app], `prod` or `dev`) and what the phone is called.
+     */
+    val deviceKey: String = "",
+    val app: String = "",
+    val deviceName: String = "",
 ) {
     val isRemote: Boolean get() = role == ROLE_REMOTE
 
@@ -133,6 +140,8 @@ data class PartyQueue(
 @Serializable
 data class PartySnapshot(
     val code: String = "",
+    /** [KIND_JAM], joined with a code, or [KIND_CONNECT], this account's own devices. */
+    val kind: String = KIND_JAM,
     val createdAtMs: Long = 0,
     val maxMembers: Int = 5,
     /**
@@ -202,6 +211,22 @@ internal data class JoinRequest(
     val autoplayEnabled: Boolean? = null,
     /** Null joins as a speaker, and keeps the request identical to before remotes. */
     val role: String? = null,
+)
+
+const val KIND_JAM = "jam"
+const val KIND_CONNECT = "connect"
+
+/** Signing one of this account's devices into its Connect party. */
+@Serializable
+internal data class ConnectRequest(
+    val gatewayUser: String,
+    val gatewayToken: String,
+    val gatewaySalt: String,
+    val deviceKey: String,
+    val app: String,
+    val deviceName: String,
+    val displayName: String,
+    val avatarUrl: String? = null,
 )
 
 @Serializable

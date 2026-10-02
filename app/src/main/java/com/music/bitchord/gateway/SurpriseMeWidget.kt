@@ -74,7 +74,7 @@ class SurpriseMeWidget : AppWidgetProvider() {
         if (!Gateway.signedIn) return R.string.widget_surprise_sign_in
         // A party's queue belongs to everyone in it; the app asks before
         // replacing it, and a widget has nowhere to ask.
-        if (ListenTogether.state.value.inParty) return R.string.widget_surprise_in_party
+        if (ListenTogether.state.value.inJam) return R.string.widget_surprise_in_party
         val songs = SurpriseMe.batch().getOrNull().orEmpty()
         if (songs.isEmpty()) return R.string.widget_surprise_failed
         val token = SessionToken(context, ComponentName(context, PlaybackService::class.java))

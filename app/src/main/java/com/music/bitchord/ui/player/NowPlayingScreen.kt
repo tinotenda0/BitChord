@@ -1,5 +1,7 @@
 package com.music.bitchord.ui.player
 
+import com.music.bitchord.data.listentogether.ListenTogether
+
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.constrainWidth
 import androidx.compose.ui.unit.offset
@@ -633,6 +635,19 @@ fun NowPlayingScreen(
     var showLyricsProviders by remember { mutableStateOf(false) }
     // Gated on the Bluetooth permission the first time — see [rememberOutputPicker].
     val openAudioOutput = rememberOutputPicker { showAudioOutput = true }
+    var showConnectDevices by remember { mutableStateOf(false) }
+    // With another of this account's devices connected, "where is the sound
+    // coming from" is a choice between devices before it is one between this
+    // phone's speaker and headphones, so the same button asks that first. See
+    // [ConnectDevicesSheet], whose last row is this phone's outputs.
+    val openOutputOrDevices: () -> Unit = {
+        val party = ListenTogether.state.value
+        if (party.isConnect && party.members.any { it.connected && it.memberId != party.you?.memberId }) {
+            showConnectDevices = true
+        } else {
+            openAudioOutput()
+        }
+    }
     // Listening in a party whose host has taken the controls: the transport
     // keeps only play/pause, which from here moves this device alone.
     val controlsLocked = rememberControlsLocked()
@@ -1325,7 +1340,7 @@ fun NowPlayingScreen(
             onToggleShuffle = onToggleShuffle,
             onCycleRepeat = onCycleRepeat,
             onToggleAutoplay = onToggleAutoplay,
-            onOpenOutput = openAudioOutput,
+            onOpenOutput = openOutputOrDevices,
             onListenTogether = onListenTogether,
             onOpenListenTogetherMembers = openListenTogetherMembers,
         )
@@ -1337,7 +1352,7 @@ fun NowPlayingScreen(
         ) {
             OutputCaption(
                 accountName = accountName,
-                onOpenOutput = openAudioOutput,
+                onOpenOutput = openOutputOrDevices,
                 onOpenMembers = openListenTogetherMembers,
             )
         }
@@ -1369,6 +1384,16 @@ fun NowPlayingScreen(
                 hazeState = playerHaze,
                 isPlaying = isPlaying,
                 onDismiss = { showAudioPipeline = false },
+            )
+        }
+        if (showConnectDevices) {
+            ConnectDevicesSheet(
+                hazeState = playerHaze,
+                onDismiss = { showConnectDevices = false },
+                onThisPhoneOutput = {
+                    showConnectDevices = false
+                    openAudioOutput()
+                },
             )
         }
         if (showListenTogetherMembers) {

@@ -1309,4 +1309,18 @@
 
 
 
+    <string name="listen_together_join_as_remote">Als Fernbedienung beitreten</string>
+    <string name="listen_together_join_as_remote_footer">Steuere die Musik des Hosts von diesem Handy aus, ohne sie hier abzuspielen.</string>
+    <string name="listen_together_remote_badge">Fernbedienung</string>
+    <string name="listen_together_you_are_remote">Du bist eine Fernbedienung. Die Musik läuft auf dem Gerät des Hosts, dieses Handy steuert sie nur.</string>
+    <string name="connect_devices_title">Geräte</string>
+    <string name="connect_playing_on">Wird auf %1$s abgespielt</string>
+    <string name="connect_this_phone">%1$s (dieses Handy)</string>
+    <string name="connect_playing">Wird abgespielt</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">Audioausgabe dieses Handys</string>
+    <string name="connect_setting">Mit meinen Geräten verbinden</string>
+    <string name="connect_setting_subtitle">Deine angemeldeten Geräte finden sich gegenseitig: Steuere eines vom anderen aus oder verschiebe die Musik zwischen ihnen.</string>
+    <string name="connect_needs_gateway">Melde dich in den Einstellungen bei deinem Konto an, um Connect zu nutzen.</string>
 </resources>

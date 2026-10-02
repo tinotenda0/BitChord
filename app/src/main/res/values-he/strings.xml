@@ -1314,4 +1314,18 @@
 
 
 
+    <string name="listen_together_join_as_remote">הצטרפות כשלט</string>
+    <string name="listen_together_join_as_remote_footer">שליטה במוזיקה של המארח מהטלפון הזה בלי לנגן אותה כאן.</string>
+    <string name="listen_together_remote_badge">שלט</string>
+    <string name="listen_together_you_are_remote">אתה שלט. המוזיקה מתנגנת במכשיר של המארח, והטלפון הזה רק שולט בה.</string>
+    <string name="connect_devices_title">מכשירים</string>
+    <string name="connect_playing_on">מתנגן ב־%1$s</string>
+    <string name="connect_this_phone">%1$s (הטלפון הזה)</string>
+    <string name="connect_playing">מתנגן</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">פלט השמע של הטלפון הזה</string>
+    <string name="connect_setting">חיבור למכשירים שלי</string>
+    <string name="connect_setting_subtitle">המכשירים המחוברים שלך מוצאים זה את זה: שלוט באחד מהשני או העבר את המוזיקה ביניהם.</string>
+    <string name="connect_needs_gateway">התחבר לחשבון שלך בהגדרות כדי להשתמש ב־Connect.</string>
 </resources>

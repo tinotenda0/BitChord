@@ -137,6 +137,19 @@ object Gateway {
             .build()
     }
 
+    /**
+     * A one-off Subsonic token login: the user, `md5(password + salt)` and the
+     * salt. Lets another service ask the gateway whether this is really the
+     * signed-in user without the password itself ever leaving the phone. Null
+     * when nobody is signed in.
+     */
+    fun tokenLogin(): Triple<String, String, String>? {
+        val user = _username.value.ifEmpty { return null }
+        val pass = password() ?: return null
+        val salt = UUID.randomUUID().toString().replace("-", "").take(12)
+        return Triple(user, md5(pass + salt), salt)
+    }
+
     private fun md5(input: String): String =
         MessageDigest.getInstance("MD5").digest(input.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
