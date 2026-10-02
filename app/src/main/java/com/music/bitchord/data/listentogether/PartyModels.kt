@@ -231,6 +231,8 @@ internal data class ConnectRequest(
     val avatarUrl: String? = null,
     /** This device's UnifiedPush endpoint, so a sleeping device can be woken. */
     val pushEndpoint: String? = null,
+    /** Music is coming out of this device right now; see `ListenTogether.localPlaybackActive`. */
+    val playing: Boolean = false,
 )
 
 /**

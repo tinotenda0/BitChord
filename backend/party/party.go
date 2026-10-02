@@ -632,7 +632,8 @@ func (p *Party) JoinAs(userId, deviceId, displayName string, avatarUrl *string, 
 // one that has been paused for longer than ConnectHandoverMs. Otherwise it joins
 // as a remote for what is already playing, the way opening Spotify on a laptop
 // shows the music coming out of the phone.
-func (p *Party) JoinConnect(userId, deviceKey, app, deviceName, displayName string, avatarUrl *string) (*Member, error) {
+func (p *Party) JoinConnect(userId, deviceKey, app, deviceName, displayName string, avatarUrl *string, playing ...bool) (*Member, error) {
+	isPlaying := len(playing) > 0 && playing[0]
 	deviceId := deviceKey + ":" + app
 	now := clock.NowMs()
 	var m *Member
@@ -677,7 +678,11 @@ func (p *Party) JoinConnect(userId, deviceKey, app, deviceName, displayName stri
 
 	host := p.Host()
 	idle := !p.Playback.IsPlaying && now-p.Playback.UpdatedAtMs > config.ConnectHandoverMs
-	if host == nil || host == m || host.IsRemote() || !host.Connected || idle {
+	// A device arriving with music already coming out of it is the output,
+	// unless another device is actually playing the party. That is the device
+	// that lost its membership mid-song; making it a remote would stop the music.
+	claims := isPlaying && !(p.Playback.IsPlaying && host != nil && host != m && host.Connected && !host.IsRemote())
+	if host == nil || host == m || host.IsRemote() || !host.Connected || idle || claims {
 		// Taking over from an output that is not there: whatever it was
 		// "playing" stopped when it went, so this device starts paused there.
 		if host != m && p.Playback.IsPlaying && (host == nil || !host.Connected) {

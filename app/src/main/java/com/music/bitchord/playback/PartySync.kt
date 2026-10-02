@@ -190,6 +190,10 @@ class PartySync(
     /** When this device, as the party's clock, last reported its playhead. */
     private var lastClockReportMs = 0L
 
+    /** The party last heard from, and whether it has gone quiet since. See [reconcile]. */
+    private var heardFrom: String? = null
+    private var outOfTouch = false
+
     private var lastPartyCode: String? = null
     private var lastPartyWasConnect = false
 
@@ -329,6 +333,7 @@ class PartySync(
      * has to be caught as it happens. See [focusLost].
      */
     fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+        ListenTogether.localPlaybackActive = playWhenReady && !ListenTogether.state.value.isRemote
         if (playWhenReady) {
             // Audible again by some route — a rejoin, a headset button, the
             // notification. Whatever it was, following the party is right.
@@ -521,6 +526,31 @@ class PartySync(
         // off whatever the listener just started — so this device follows
         // nothing until its own user asks it to. See [focusLost].
         if (focusLost) return
+        // Not hearing from the party: what is held is the last thing heard,
+        // and it goes stale by the second. Following it anyway is what dragged
+        // a phone back to the same song, part way in, over and over: the song
+        // ended, the next one's publish went nowhere, and this pulled the player
+        // back to the stale state. So the player is left alone until the party
+        // is back.
+        if (!mayFollow(party)) {
+            if (heardFrom == party.code) outOfTouch = true
+            return
+        }
+        // Back in touch with the same party after a gap. The device playing it
+        // kept going while nobody could hear, so it tells the party where it
+        // really is rather than being dragged back to where it was. Checked
+        // before anything below can move the player, on the first state heard.
+        if (outOfTouch && heardFrom == party.code) {
+            outOfTouch = false
+            val here = player()
+            if (here != null && shouldCatchUpOnReconnect(party, here.currentMediaItem?.mediaId, here.playWhenReady)) {
+                Log.i(TAG, "back in touch and ahead of the party; telling it where this device is")
+                onLocalIntent()
+                return
+            }
+        }
+        outOfTouch = false
+        heardFrom = party.code
         val target = party.playback
         val track = target.track ?: run {
             seedEmptyParty(party)
@@ -1217,4 +1247,31 @@ internal fun detectSingleMove(
         }
     }
     return null
+}
+
+/**
+ * Whether the player may be moved to match the party at all: only while the
+ * party is being heard from. A device out of touch keeps playing what it is
+ * playing; see [shouldCatchUpOnReconnect] for the way back.
+ */
+internal fun mayFollow(party: ListenTogether.State): Boolean =
+    party.connection == ListenTogether.Connection.LIVE
+
+/**
+ * Whether this device, just back in touch, should tell the party what it is
+ * doing rather than be told. Only the device whose playback is the party's (the
+ * clock, or Connect's output) and only when it actually moved on while away.
+ */
+internal fun shouldCatchUpOnReconnect(
+    party: ListenTogether.State,
+    localTrackId: String?,
+    localPlaying: Boolean,
+): Boolean {
+    if (party.connection != ListenTogether.Connection.LIVE || localTrackId == null) return false
+    val ownsPlayback = party.isClock || (party.isConnect && !party.isRemote)
+    if (!ownsPlayback) return false
+    val playback = party.playback
+    // An empty party is seeded from this device by [PartySync] as it is.
+    if (playback.track == null) return false
+    return localTrackId != playback.track.videoId || localPlaying != playback.isPlaying
 }

@@ -83,6 +83,11 @@ type ConnectRequest struct {
 	AvatarUrl    *string `json:"avatarUrl,omitempty"`
 	// PushEndpoint is the device's UnifiedPush endpoint, for waking it later.
 	PushEndpoint string  `json:"pushEndpoint,omitempty"`
+	// Playing says the device has music coming out of it right now: it was
+	// the output and lost its membership (a redeploy, a long tunnel), and it
+	// should come back as the output rather than be silenced by whichever of
+	// the account's devices happened to sign in again first.
+	Playing bool `json:"playing,omitempty"`
 }
 
 func isWord(s string, min, max int) bool {

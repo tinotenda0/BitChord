@@ -271,3 +271,27 @@ func TestAnExpiredWakeIsIgnored(t *testing.T) {
 		t.Fatalf("a wake that came too late must not hijack playback")
 	}
 }
+
+func TestAPlayingDeviceComingBackReclaimsAnIdleParty(t *testing.T) {
+	// A redeploy wiped the party; the idle phone happened to sign in first.
+	p := connectParty(t)
+	phone := join(t, p, "phone0001", "prod")
+	tablet, err := p.JoinConnect("gw:tino", "tablet001", "prod", "Tablet", "Tino", nil, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tablet.Connected = true
+	if tablet.IsRemote() || !tablet.IsHost || !phone.IsRemote() {
+		t.Fatalf("the device with music coming out of it must come back as the output")
+	}
+}
+
+func TestAPlayingDeviceDoesNotStealAPartyThatIsPlaying(t *testing.T) {
+	p := connectParty(t)
+	phone := join(t, p, "phone0001", "prod")
+	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
+	tablet, _ := p.JoinConnect("gw:tino", "tablet001", "prod", "Tablet", "Tino", nil, true)
+	if !tablet.IsRemote() {
+		t.Fatalf("a party already playing elsewhere keeps its output")
+	}
+}

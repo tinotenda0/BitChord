@@ -782,17 +782,80 @@ object ListenTogether {
 
     // ------------------------------------------------------------ Connect --
 
-    /** A handshake refused because the membership is gone, not because the network is. */
-    private val DEAD_MEMBERSHIP = Regex("""(401|404)""")
-
     /** Lets go of a membership the server has already forgotten, without telling it. */
-    private fun forgetMembership() {
+    private fun forgetMembership(error: String? = null) {
         token = null
         activePartyServerBase = null
         prefs.edit().remove(KEY_CODE).remove(KEY_TOKEN).apply()
         clock.reset()
-        _state.value = State()
+        _state.value = State(error = error)
     }
+
+    private enum class MembershipProbe { ALIVE, TOKEN_GONE, PARTY_GONE, UNKNOWN }
+
+    /** Whether this device's membership still exists, asked over plain HTTP. */
+    private suspend fun probeMembership(code: String, held: String): MembershipProbe {
+        val base = activePartyServerBase ?: resolveHttpBase(effectiveIdleServerBase())
+        if (base.isBlank()) return MembershipProbe.UNKNOWN
+        return runCatching {
+            val status = http.get("$base/api/parties/$code") {
+                header("Authorization", "Bearer $held")
+            }.status.value
+            when (status) {
+                200 -> MembershipProbe.ALIVE
+                401 -> MembershipProbe.TOKEN_GONE
+                404 -> MembershipProbe.PARTY_GONE
+                else -> MembershipProbe.UNKNOWN
+            }
+        }.getOrDefault(MembershipProbe.UNKNOWN)
+    }
+
+    /**
+     * The server has let this membership go while this device was away.
+     *
+     * Connect signs straight back in as the same device ([ensureHome]). A jam
+     * whose party is still there is rejoined with the same code and role, so a
+     * drive through a tunnel does not end it for this phone; one whose party has
+     * ended is left, saying so.
+     */
+    private fun onMembershipLost(partyGone: Boolean) {
+        val state = _state.value
+        session = null
+        if (state.isConnect) {
+            Log.i(TAG, "connect membership gone; signing in again")
+            forgetMembership()
+            homeRetryAtMs = 0L
+            homeFailures = 0
+            return
+        }
+        val code = state.code
+        val asRemote = state.isRemote
+        val base = activePartyServerBase
+        if (partyGone || code == null || base == null) {
+            Log.i(TAG, "jam ended while away")
+            forgetMembership(error = "That party has ended.")
+            return
+        }
+        Log.i(TAG, "jam membership expired while away; rejoining")
+        scope.launch {
+            val rejoined = runCatching {
+                switchMutex.withLock { doJoinOnServer(base, code, nickname(), asRemote) }
+            }
+            rejoined.onFailure { failure ->
+                Log.w(TAG, "could not rejoin the jam: ${redact(failure.message)}")
+                forgetMembership(error = failure.displayMessage())
+            }
+        }
+    }
+
+    /**
+     * Whether this device has music coming out of it, for a Connect sign-in to
+     * say so: a device that lost its membership mid-song comes back as the one
+     * playing rather than being silenced. Kept by `PartySync` from the
+     * player's own callback, since the player may only be read on its thread.
+     */
+    @Volatile
+    var localPlaybackActive: Boolean = false
 
     private lateinit var appContext: Context
 
@@ -912,6 +975,7 @@ object ListenTogether {
                     displayName = who?.name ?: user,
                     avatarUrl = who?.avatar,
                     pushEndpoint = _pushEndpoint.value,
+                    playing = localPlaybackActive,
                 ),
             )
         }
@@ -1414,7 +1478,11 @@ object ListenTogether {
                 ) {
                     session = this
                     backoffMs = 1_000L
-                    _state.update { it.copy(connection = Connection.LIVE, error = null) }
+                    // Not LIVE yet. Until the welcome lands, everything held here
+                    // is what was true before the gap, and the player layer
+                    // treats LIVE as permission to act on it. See [State] and the
+                    // welcome branch of [onFrame], which is what sets it.
+                    _state.update { it.copy(error = null) }
                     launch { pingLoop() }
                     launch { reportLoop() }
                     for (frame in incoming) {
@@ -1425,19 +1493,26 @@ object ListenTogether {
                 throw cancelled
             } catch (failure: Exception) {
                 Log.w(TAG, "party socket dropped: ${redact(failure.message)}")
-                // Connect only: the server no longer knows this membership,
-                // which is what a redeploy does to every account party at once.
-                // Retrying the same token would be refused for ever; dropping
-                // it lets [ensureHome] sign straight back in as the same device.
-                if (_state.value.isConnect && failure.message?.let(DEAD_MEMBERSHIP::containsMatchIn) == true) {
-                    session = null
-                    forgetMembership()
-                    return
-                }
             } finally {
                 session = null
             }
             if (!currentScopeActive()) return
+            // A socket that cannot be opened is either the network or a
+            // membership the server no longer has: one swept after its grace, or
+            // every one at once when the server restarts. Retrying the second
+            // kind is refused for ever, which is how a remote ended up on a
+            // spinner for good. So ask, with a plain request that answers clearly.
+            when (probeMembership(code, held)) {
+                MembershipProbe.ALIVE, MembershipProbe.UNKNOWN -> Unit
+                MembershipProbe.TOKEN_GONE -> {
+                    onMembershipLost(partyGone = false)
+                    return
+                }
+                MembershipProbe.PARTY_GONE -> {
+                    onMembershipLost(partyGone = true)
+                    return
+                }
+            }
             _state.update { it.copy(connection = Connection.CONNECTING) }
             // The clock is not carried across a gap. Whatever the offset was
             // before the socket died, the only honest thing to say afterwards is

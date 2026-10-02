@@ -419,7 +419,7 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	p := store.Account(account)
 	p.Lock()
-	m, err := p.JoinConnect("gw:"+account, req.DeviceKey, req.App, req.DeviceName, req.DisplayName, req.AvatarUrl)
+	m, err := p.JoinConnect("gw:"+account, req.DeviceKey, req.App, req.DeviceName, req.DisplayName, req.AvatarUrl, req.Playing)
 	if err != nil {
 		p.Unlock()
 		if pe, ok := err.(*party.PartyError); ok {
