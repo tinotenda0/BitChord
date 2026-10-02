@@ -21,6 +21,7 @@ import (
 	"github.com/KabirSinghBhatia/BitChord/backend/clock"
 	"github.com/KabirSinghBhatia/BitChord/backend/codes"
 	"github.com/KabirSinghBhatia/BitChord/backend/config"
+	"github.com/KabirSinghBhatia/BitChord/backend/gateway"
 	"github.com/KabirSinghBhatia/BitChord/backend/hub"
 	"github.com/KabirSinghBhatia/BitChord/backend/party"
 	"github.com/KabirSinghBhatia/BitChord/backend/protocol"
@@ -30,6 +31,8 @@ var (
 	store    = party.NewPartyStore()
 	hubInst  = hub.NewHub()
 	createLimiter = newIPRateLimiter(time.Minute, config.CreateRatePerMinute, config.RateLimitMaxEntries)
+	connectLimiter = newIPRateLimiter(time.Minute, config.ConnectRatePerMinute, config.RateLimitMaxEntries)
+	verifier = gateway.New(config.GatewayURL)
 	upgrader = websocket.Upgrader{
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
@@ -52,6 +55,7 @@ func main() {
 	mux.HandleFunc("GET /api/parties/{code}", handleGetParty)
 	mux.HandleFunc("GET /api/parties/{code}/preview", handlePreviewParty)
 	mux.HandleFunc("POST /api/parties/{code}/leave", handleLeaveParty)
+	mux.HandleFunc("POST /api/connect", handleConnect)
 
 	// Web invite endpoint
 	mux.HandleFunc("GET /invite/{code}", handleInviteLanding)
@@ -297,6 +301,10 @@ func handleJoinParty(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if party.IsAccountCode(code) {
+		jsonError(w, http.StatusNotFound, "no_such_party", "No party with that code.")
+		return
+	}
 	p, err := store.Get(code)
 	if err != nil {
 		if pe, ok := err.(*party.PartyError); ok {
@@ -332,6 +340,68 @@ func handleJoinParty(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleConnect signs one of an account's devices into its Connect party.
+//
+// The answer has the same shape as a join, so the app drives a Connect party
+// with exactly the socket, state and controls it uses for a jam.
+func handleConnect(w http.ResponseWriter, r *http.Request) {
+	if !verifier.Enabled() {
+		jsonError(w, http.StatusServiceUnavailable, "connect_disabled", gateway.ErrDisabled.Error())
+		return
+	}
+	if !connectLimiter.Allow(clientIP(r)) {
+		jsonError(w, http.StatusTooManyRequests, "connect_rate_limited", "Too many sign-ins from here. Please try again shortly.")
+		return
+	}
+	var req protocol.ConnectRequest
+	if !decodeJSONBody(w, r, &req) {
+		return
+	}
+	if err := req.Validate(); err != nil {
+		jsonError(w, http.StatusUnprocessableEntity, "validation_error", err.Error())
+		return
+	}
+	account, err := verifier.Verify(r.Context(), req.GatewayUser, req.GatewayToken, req.GatewaySalt)
+	switch {
+	case errors.Is(err, gateway.ErrRejected):
+		jsonError(w, http.StatusUnauthorized, "bad_login", err.Error())
+		return
+	case err != nil:
+		jsonError(w, http.StatusBadGateway, "gateway_unreachable", err.Error())
+		return
+	}
+
+	p := store.Account(account)
+	p.Lock()
+	m, err := p.JoinConnect("gw:"+account, req.DeviceKey, req.App, req.DeviceName, req.DisplayName, req.AvatarUrl)
+	if err != nil {
+		p.Unlock()
+		if pe, ok := err.(*party.PartyError); ok {
+			jsonError(w, pe.Status, pe.Code, pe.Message)
+			return
+		}
+		jsonError(w, http.StatusInternalServerError, "server_error", err.Error())
+		return
+	}
+	partyWire := p.ToWire()
+	youWire := m.ToWire()
+	token := m.Token
+	code := p.Code
+	// Joining can move the output, which every device already here must hear.
+	mFrame := membersFrame(p)
+	sFrame := stateFrame(p)
+	p.Unlock()
+	hubInst.Broadcast(code, mFrame, "")
+	hubInst.Broadcast(code, sFrame, "")
+
+	jsonResponse(w, http.StatusOK, map[string]interface{}{
+		"code":  code,
+		"token": token,
+		"you":   youWire,
+		"party": partyWire,
+	})
+}
+
 // handlePreviewParty answers who is in a party, without a token and without
 // joining it.
 //
@@ -346,6 +416,10 @@ func handleJoinParty(w http.ResponseWriter, r *http.Request) {
 // not release, allocates a short slice, and creates nothing.
 func handlePreviewParty(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
+	if party.IsAccountCode(code) {
+		jsonError(w, http.StatusNotFound, "no_such_party", "No party with that code.")
+		return
+	}
 	p, err := store.Get(code)
 	if err != nil {
 		if pe, ok := err.(*party.PartyError); ok {
@@ -892,6 +966,11 @@ func handleSocketFrame(p *party.Party, member *party.Member, sc *hub.SafeConn, f
 			if p.Playback.QueueSeq != queueBefore {
 				hubInst.Broadcast(p.Code, queueFrame(p), "")
 			}
+			// Members before state on a transfer: a device has to know it is
+			// now the one playing before the state that asks it to start.
+			if action == protocol.ActionTransfer {
+				hubInst.Broadcast(p.Code, membersFrame(p), "")
+			}
 			hubInst.Broadcast(p.Code, stateFrame(p), "")
 			if action == protocol.ActionKick ||
 				action == protocol.ActionSetMaxMembers ||
@@ -1083,6 +1162,14 @@ func applyControl(p *party.Party, member *party.Member, action string, frame map
 		}
 		return true, "", ""
 
+	case protocol.ActionTransfer:
+		targetID, _ := frame["memberId"].(string)
+		if err := p.Transfer(targetID); err != nil {
+			pe := err.(*party.PartyError)
+			return false, pe.Code, pe.Message
+		}
+		return true, "", ""
+
 	case protocol.ActionKick:
 		targetID, _ := frame["memberId"].(string)
 		if !member.IsHost { return false, "host_only", "Only the host can remove listeners." }
@@ -1141,6 +1228,7 @@ func activityFrame(member *party.Member, action string, frame map[string]interfa
 	case protocol.ActionKick: detail = "Removed a listener from the party"
 	case protocol.ActionSetMaxMembers: detail = "Changed the party size"
 	case protocol.ActionSetAutoplay: detail = "Changed AutoPlay"
+	case protocol.ActionTransfer: detail = "Moved playback to another device"
 	}
 	return map[string]interface{}{"type": protocol.FrameActivity, "action": action, "by": member.DisplayName, "detail": detail, "atMs": clock.NowMs()}
 }

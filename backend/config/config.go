@@ -18,6 +18,13 @@ func getInt(key string, fallback int) int {
 	return parsed
 }
 
+func getString(key string, fallback string) string {
+	if val := strings.TrimSpace(os.Getenv(key)); val != "" {
+		return val
+	}
+	return fallback
+}
+
 func getCSV(key string, fallback string) []string {
 	val := os.Getenv(key)
 	if val == "" {
@@ -70,6 +77,19 @@ var (
 	// The least time between two re-anchors of one party, so a device that is
 	// stalling repeatedly cannot drag everybody else along at every report.
 	ReanchorCooldownMs   = int64(getInt("JAM_REANCHOR_COOLDOWN_MS", 3000))
+
+	// Connect: an account's own devices, in one code-less party. Off unless a
+	// gateway is configured to check logins against.
+	GatewayURL           = getString("JAM_GATEWAY_URL", "")
+	ConnectMaxDevices    = getInt("JAM_CONNECT_MAX_DEVICES", 10)
+	// How long an account's party outlives its last connected device.
+	ConnectIdleTTLMs     = int64(getInt("JAM_CONNECT_IDLE_TTL_MS", 6*60*60*1000))
+	// How long the output may sit paused before a device that opens takes
+	// playback over, instead of joining as a remote for a speaker nobody is using.
+	ConnectHandoverMs    = int64(getInt("JAM_CONNECT_HANDOVER_MS", 5*60*1000))
+	// How far ahead a transferred song restarts, for the new device to load it.
+	TransferLeadMs       = int64(getInt("JAM_TRANSFER_LEAD_MS", 1500))
+	ConnectRatePerMinute = getInt("JAM_CONNECT_RATE_PER_MINUTE", 30)
 	StateHeartbeatMs     = getInt("JAM_STATE_HEARTBEAT_MS", 5000)
 	PlayLeadMs           = getInt("JAM_PLAY_LEAD_MS", 350)
 	DisconnectGraceMs    = int64(getInt("JAM_DISCONNECT_GRACE_MS", 45000))

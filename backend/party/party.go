@@ -2,10 +2,12 @@ package party
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/KabirSinghBhatia/BitChord/backend/clock"
@@ -431,6 +433,12 @@ type Member struct {
 	MemberId           string  `json:"memberId"`
 	// Role is protocol.RoleSpeaker or protocol.RoleRemote.
 	Role               string  `json:"role"`
+	// DeviceKey, App and DeviceName say which phone and which build of the app
+	// this is, for Connect: one phone running the stable and the dev build is
+	// two members that share a DeviceKey, and two phones never share one.
+	DeviceKey          string  `json:"deviceKey,omitempty"`
+	App                string  `json:"app,omitempty"`
+	DeviceName         string  `json:"deviceName,omitempty"`
 	UserId             string  `json:"userId"`
 	DeviceId           string  `json:"-"`
 	DisplayName        string  `json:"displayName"`
@@ -453,6 +461,9 @@ func (m *Member) ToWire() map[string]interface{} {
 		"displayName": m.DisplayName,
 		"avatarUrl":   m.AvatarUrl,
 		"role":        m.Role,
+		"deviceKey":   m.DeviceKey,
+		"app":         m.App,
+		"deviceName":  m.DeviceName,
 		"isHost":      m.IsHost,
 		"connected":   m.Connected,
 		"joinedAtMs":  m.JoinedAtMs,
@@ -462,10 +473,20 @@ func (m *Member) ToWire() map[string]interface{} {
 
 func (m *Member) IsRemote() bool { return m.Role == protocol.RoleRemote }
 
+// Party kinds. A jam is joined with a code; a Connect party belongs to one
+// account, is joined by signing in, and has exactly one device playing it.
+const (
+	KindJam     = "jam"
+	KindConnect = "connect"
+)
+
 // Party holds members and playback state for a single room code.
 type Party struct {
 	mu         sync.Mutex
 	Code       string
+	Kind       string
+	// Account is the gateway account a Connect party belongs to.
+	Account    string
 	Members    map[string]*Member
 	Playback   *PlaybackState
 	MaxMembers int
@@ -495,6 +516,7 @@ func NewPartyWithMaxMembers(code string, maxMembers int) *Party {
 	empty := now
 	return &Party{
 		Code:         code,
+		Kind:         KindJam,
 		Members:      make(map[string]*Member),
 		Playback:     NewPlaybackState(),
 		MaxMembers:   maxMembers,
@@ -503,6 +525,8 @@ func NewPartyWithMaxMembers(code string, maxMembers int) *Party {
 		EmptySinceMs: &empty,
 	}
 }
+
+func (p *Party) IsConnect() bool { return p.Kind == KindConnect }
 
 func (p *Party) Lock()   { p.mu.Lock() }
 func (p *Party) Unlock() { p.mu.Unlock() }
@@ -592,9 +616,125 @@ func (p *Party) JoinAs(userId, deviceId, displayName string, avatarUrl *string, 
 	return m, nil
 }
 
+// JoinConnect brings one of an account's devices into its Connect party, and
+// decides whether it is the device that plays or a remote for the one that does.
+//
+// A device is its deviceKey and app together, never anything chosen fresh per
+// process: so a phone that restarts, reinstalls or reconnects comes back as the
+// member it was instead of piling up as another, and the stable and dev builds
+// on one phone are two members of the same phone rather than two phones.
+//
+// It plays when nothing else is: no output, an output that is not connected, or
+// one that has been paused for longer than ConnectHandoverMs. Otherwise it joins
+// as a remote for what is already playing, the way opening Spotify on a laptop
+// shows the music coming out of the phone.
+func (p *Party) JoinConnect(userId, deviceKey, app, deviceName, displayName string, avatarUrl *string) (*Member, error) {
+	deviceId := deviceKey + ":" + app
+	now := clock.NowMs()
+	var m *Member
+	for _, existing := range p.Members {
+		if existing.DeviceId == deviceId {
+			m = existing
+			break
+		}
+	}
+	if m == nil {
+		if err := p.checkRoom(protocol.RoleRemote, nil); err != nil {
+			return nil, err
+		}
+		m = &Member{
+			MemberId:          randomHex(8),
+			Role:              protocol.RoleRemote,
+			DeviceId:          deviceId,
+			JoinedAtMs:        now,
+			ControlBudget:     config.ControlRatePerSecond,
+			ControlBudgetAtMs: now,
+			FrameBudget:       config.FrameRatePerSecond,
+			FrameBudgetAtMs:   now,
+		}
+		p.Members[m.MemberId] = m
+	}
+	m.UserId = userId
+	m.DeviceKey = deviceKey
+	m.App = app
+	m.DeviceName = deviceName
+	m.DisplayName = displayName
+	m.AvatarUrl = avatarUrl
+	m.LastSeenMs = now
+	m.Token = randomToken(24)
+
+	host := p.Host()
+	idle := !p.Playback.IsPlaying && now-p.Playback.UpdatedAtMs > config.ConnectHandoverMs
+	if host == nil || host == m || host.IsRemote() || !host.Connected || idle {
+		p.setOutput(m)
+	} else {
+		m.Role = protocol.RoleRemote
+		m.IsHost = false
+	}
+	p.Touch()
+	return m, nil
+}
+
+// setOutput makes m the one device playing a Connect party. The output is the
+// host and so the clock; whoever held it becomes a remote.
+func (p *Party) setOutput(m *Member) {
+	for _, other := range p.Members {
+		if other != m && other.IsHost {
+			other.IsHost = false
+			other.Role = protocol.RoleRemote
+		}
+	}
+	m.IsHost = true
+	m.Role = protocol.RoleSpeaker
+	p.LastReanchorMs = 0
+}
+
+// Transfer moves a Connect party's playback to another of its devices.
+//
+// The party carries on from where it is, but a playing party is restarted a
+// moment ahead (TransferLeadMs) rather than left running: the new device has to
+// fetch and start a song from cold, and without the gap it would come in that
+// far into it, having skipped what everyone was listening to.
+func (p *Party) Transfer(to string) error {
+	if !p.IsConnect() {
+		return NewPartyError(409, "not_connect", "Playback can only be moved between your own devices.")
+	}
+	target, ok := p.Members[to]
+	if !ok {
+		return NewPartyError(404, "not_found", "That device is no longer connected.")
+	}
+	if !target.Connected {
+		return NewPartyError(409, "device_away", "That device is not connected right now.")
+	}
+	if target.IsHost && !target.IsRemote() {
+		return nil
+	}
+	p.setOutput(target)
+	pb := p.Playback
+	now := clock.NowMs()
+	if pb.IsPlaying {
+		pb.PositionMs = pb.PositionAt(now)
+		pb.AnchorMs = now + config.TransferLeadMs
+	}
+	pb.Seq++
+	pb.UpdatedAtMs = now
+	p.Touch()
+	return nil
+}
+
 // checkRoom refuses a member of this role once that role is full. except is a
 // rejoining member switching role, who must not be counted against themselves.
 func (p *Party) checkRoom(role string, except *Member) error {
+	if p.IsConnect() {
+		n := len(p.Members)
+		if except != nil {
+			n--
+		}
+		if n >= config.ConnectMaxDevices {
+			return NewPartyError(409, "too_many_devices", fmt.Sprintf("This account already has %d devices connected.", config.ConnectMaxDevices))
+		}
+		return nil
+	}
 	if role == protocol.RoleRemote {
 		if p.countRole(protocol.RoleRemote, except) >= config.MaxRemotes {
 			return NewPartyError(409, "remotes_full", fmt.Sprintf("This party already has %d remotes.", config.MaxRemotes))
@@ -782,6 +922,15 @@ func (p *Party) Remove(memberId string) *Member {
 	delete(p.Members, memberId)
 	if m.IsHost {
 		p.electHost(nil)
+		if p.IsConnect() {
+			if h := p.Host(); h != nil && h.IsRemote() {
+				// Nobody is playing it any more. Rather than leave every phone
+				// steering a speaker that is gone, playback moves to a device that
+				// is still here, paused where it stopped, for its owner to resume.
+				h.Role = protocol.RoleSpeaker
+				p.Playback.Pause(nil, nil)
+			}
+		}
 	}
 	p.Touch()
 	p.refreshEmptiness()
@@ -860,6 +1009,9 @@ func (p *Party) ExpiredMembers(now int64) []*Member {
 }
 
 func (p *Party) IsExpired(now int64) bool {
+	if p.IsConnect() {
+		return p.EmptySinceMs != nil && now-*p.EmptySinceMs > config.ConnectIdleTTLMs
+	}
 	if now-p.CreatedAtMs > config.PartyMaxAgeMs {
 		return true
 	}
@@ -886,6 +1038,7 @@ func (p *Party) ToWire() map[string]interface{} {
 
 	return map[string]interface{}{
 		"code":            p.Code,
+		"kind":            p.Kind,
 		"createdAtMs":     p.CreatedAtMs,
 		"maxMembers":      p.MaxMembers,
 		"hostOnlyControl": p.HostOnlyControl,
@@ -960,7 +1113,44 @@ func (s *PartyStore) CreateWithLimits(maxParties, maxMembers int) (*Party, error
 	return nil, NewPartyError(503, "code_exhausted", "Could not allocate a party code.")
 }
 
+// AccountCode is the store key of an account's Connect party. It begins with
+// a character no typed code can contain, so it can never be reached by
+// guessing a code: the join and preview endpoints refuse it outright.
+func AccountCode(account string) string {
+	sum := sha256.Sum256([]byte("bitchord-connect:" + account))
+	return "~" + hex.EncodeToString(sum[:8])
+}
+
+// IsAccountCode reports whether code names a Connect party.
+func IsAccountCode(code string) bool { return strings.HasPrefix(code, "~") }
+
+// Account returns an account's Connect party, making it on first use. It is
+// not subject to the service-wide party limit: it is a household's own
+// session, not a room anybody can open.
+func (s *PartyStore) Account(account string) *Party {
+	code := AccountCode(account)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if p, ok := s.parties[code]; ok {
+		return p
+	}
+	p := NewPartyWithMaxMembers(code, config.ConnectMaxDevices)
+	p.Kind = KindConnect
+	p.Account = account
+	s.parties[code] = p
+	return p
+}
+
 func (s *PartyStore) Get(code string) (*Party, error) {
+	if IsAccountCode(code) {
+		s.mu.RLock()
+		p, ok := s.parties[code]
+		s.mu.RUnlock()
+		if !ok {
+			return nil, NewPartyError(404, "no_such_party", "No party with that code.")
+		}
+		return p, nil
+	}
 	norm := codes.Normalise(code)
 	s.mu.RLock()
 	p, ok := s.parties[norm]
@@ -972,6 +1162,9 @@ func (s *PartyStore) Get(code string) (*Party, error) {
 }
 
 func (s *PartyStore) Find(code string) *Party {
+	if IsAccountCode(code) {
+		return nil
+	}
 	norm := codes.Normalise(code)
 	s.mu.RLock()
 	defer s.mu.RUnlock()
