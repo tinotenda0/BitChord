@@ -113,6 +113,23 @@ func TestADisconnectedOutputIsTakenOver(t *testing.T) {
 	if laptop.IsRemote() {
 		t.Fatalf("a device must not be made a remote for an output that is gone")
 	}
+	if p.Playback.IsPlaying {
+		t.Errorf("taking over from a vanished output must start paused, not far into the song")
+	}
+}
+
+func TestTheLastDeviceLeavingStopsTheParty(t *testing.T) {
+	p := connectParty(t)
+	phone := join(t, p, "phone0001", "prod")
+	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
+	p.Remove(phone.MemberId)
+	if p.Playback.IsPlaying {
+		t.Fatalf("an account party with nobody playing it must not keep running")
+	}
+	back := join(t, p, "phone0001", "prod")
+	if !back.IsHost || p.Playback.Track == nil || p.Playback.Track.VideoId != "song" {
+		t.Errorf("the next device must pick the session up where it stopped")
+	}
 }
 
 func TestTransferMovesTheOutputAndLeavesRoomToLoad(t *testing.T) {

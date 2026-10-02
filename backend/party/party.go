@@ -666,6 +666,11 @@ func (p *Party) JoinConnect(userId, deviceKey, app, deviceName, displayName stri
 	host := p.Host()
 	idle := !p.Playback.IsPlaying && now-p.Playback.UpdatedAtMs > config.ConnectHandoverMs
 	if host == nil || host == m || host.IsRemote() || !host.Connected || idle {
+		// Taking over from an output that is not there: whatever it was
+		// "playing" stopped when it went, so this device starts paused there.
+		if host != m && p.Playback.IsPlaying && (host == nil || !host.Connected) {
+			p.Playback.Pause(nil, nil)
+		}
 		p.setOutput(m)
 	} else {
 		m.Role = protocol.RoleRemote
@@ -923,12 +928,15 @@ func (p *Party) Remove(memberId string) *Member {
 	if m.IsHost {
 		p.electHost(nil)
 		if p.IsConnect() {
-			if h := p.Host(); h != nil && h.IsRemote() {
-				// Nobody is playing it any more. Rather than leave every phone
-				// steering a speaker that is gone, playback moves to a device that
-				// is still here, paused where it stopped, for its owner to resume.
-				h.Role = protocol.RoleSpeaker
+			// Nobody is playing it any more, so the party stops where the
+			// output did rather than running on, on paper, for whichever device
+			// opens next to land far into the song. Playback moves to a device
+			// that is still here, paused, for its owner to resume.
+			if p.Playback.IsPlaying {
 				p.Playback.Pause(nil, nil)
+			}
+			if h := p.Host(); h != nil && h.IsRemote() {
+				h.Role = protocol.RoleSpeaker
 			}
 		}
 	}
