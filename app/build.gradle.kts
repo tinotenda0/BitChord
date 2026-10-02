@@ -288,7 +288,14 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-session:1.11.0")
     // ---- Connect: waking a sleeping device (UnifiedPush, delivered by ntfy) ----
-    implementation("org.unifiedpush.android:connector:3.3.5")
+    // It decrypts WebPush with Tink, as does security-crypto with tink-android:
+    // two builds of one library, the same classes in each. So one Tink only,
+    // the Android build at the connector's version, which security-crypto's
+    // EncryptedSharedPreferences runs on unchanged.
+    implementation("org.unifiedpush.android:connector:3.3.5") {
+        exclude(group = "com.google.crypto.tink", module = "tink")
+    }
+    implementation("com.google.crypto.tink:tink-android:1.23.0")
     implementation("androidx.media3:media3-common:1.11.0")
     implementation("androidx.media3:media3-datasource-okhttp:1.11.0")
     // Audio is progressive, but Apple serves its motion artwork as HLS — this
