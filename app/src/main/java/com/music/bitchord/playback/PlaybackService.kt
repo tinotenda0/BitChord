@@ -676,6 +676,9 @@ class PlaybackService : MediaLibraryService() {
     /** Stands in for [localSessionPlayer] while this device is a party remote. */
     private var remotePlayer: PartyRemotePlayer? = null
 
+    /** The longest a remote stays in the session after this device takes playback. */
+    private val HANDOVER_WAIT_MS = 8_000L
+
     /** Commands exposed as the secondary buttons on the media notification. */
     private val favoriteCommand = SessionCommand(ACTION_TOGGLE_FAVORITE, Bundle.EMPTY)
     private val autoplayCommand = SessionCommand(ACTION_TOGGLE_AUTOPLAY, Bundle.EMPTY)
@@ -1665,6 +1668,23 @@ class PlaybackService : MediaLibraryService() {
                         session.player = stand
                     } else if (!remote) {
                         val stand = remotePlayer ?: return@collect
+                        // Becoming the device that plays. The remote stays in the
+                        // session until this device's own player is actually
+                        // going: swapped any sooner, the session holds a paused
+                        // player for the second it takes to load, Android takes
+                        // the service out of the foreground, and the start that
+                        // follows is refused from the background. Media3 then
+                        // pauses, and the pause went to the whole party, which is
+                        // what moving playback to a device on a desk did.
+                        withTimeoutOrNull(HANDOVER_WAIT_MS) {
+                            while (true) {
+                                val party = ListenTogether.state.value
+                                if (party.isRemote) return@withTimeoutOrNull
+                                if (player?.playWhenReady == true || !party.playback.isPlaying) break
+                                delay(100)
+                            }
+                        }
+                        if (ListenTogether.state.value.isRemote) return@collect
                         remotePlayer = null
                         localSessionPlayer?.let { session.player = it }
                         stand.release()

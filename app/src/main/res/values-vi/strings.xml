@@ -1247,4 +1247,5 @@
     <string name="connect_cant_wake">Đang ngủ · hãy mở BitChord trên máy đó</string>
     <string name="connect_waking">Đang đánh thức %1$s…</string>
     <string name="connect_push_hint">Để gửi nhạc đến thiết bị đang đóng ứng dụng, hãy cài ntfy trên đó và đặt máy chủ mặc định của ntfy là %1$s.</string>
+    <string name="connect_in_a_jam">Đang trong Jam</string>
 </resources>

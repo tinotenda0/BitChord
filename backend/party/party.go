@@ -39,6 +39,10 @@ type Track struct {
 	ThumbnailUrl *string `json:"thumbnailUrl,omitempty"`
 	DurationMs   *int64  `json:"durationMs,omitempty"`
 	FromAutoplay bool    `json:"fromAutoplay"`
+	// FromContext marks a track that came from the album or playlist being
+	// played, as opposed to one somebody queued. Carried so every device keeps
+	// the queue's sections as the device that built it had them.
+	FromContext  bool    `json:"fromContext,omitempty"`
 }
 
 func TrackFromWire(raw map[string]interface{}) *Track {
@@ -78,8 +82,10 @@ func TrackFromWire(raw map[string]interface{}) *Track {
 	}
 
 	fromAutoplay, _ := raw["fromAutoplay"].(bool)
+	fromContext, _ := raw["fromContext"].(bool)
 
 	return &Track{
+		FromContext:  fromContext,
 		VideoId:      vid,
 		Title:        title,
 		Artist:       artist,
@@ -104,6 +110,8 @@ type PlaybackState struct {
 	StartedBy     *string  `json:"startedBy"`
 	StartedByName *string  `json:"startedByName"`
 	AutoplayEnabled bool   `json:"autoplayEnabled"`
+	// MaxUpcoming is how many tracks may follow the current one.
+	MaxUpcoming int `json:"-"`
 }
 
 func NewPlaybackState() *PlaybackState {
@@ -111,6 +119,7 @@ func NewPlaybackState() *PlaybackState {
 	return &PlaybackState{
 		Queue:       make([]*Track, 0),
 		QueueIndex:  -1,
+		MaxUpcoming: config.MaxUpcomingQueue,
 		AnchorMs:    now,
 		UpdatedAtMs: now,
 	}
@@ -238,7 +247,7 @@ func (p *PlaybackState) SetQueue(memberId *string, queue []*Track, queueIndex in
 
 	if queueIndex >= 0 && queueIndex < len(queue) {
 		pastAndCurrent := queue[:queueIndex+1]
-		endUpcoming := queueIndex + 1 + config.MaxUpcomingQueue
+		endUpcoming := queueIndex + 1 + p.MaxUpcoming
 		if endUpcoming > len(queue) {
 			endUpcoming = len(queue)
 		}
@@ -249,7 +258,7 @@ func (p *PlaybackState) SetQueue(memberId *string, queue []*Track, queueIndex in
 		p.Queue = newQ
 		p.QueueIndex = queueIndex
 	} else {
-		maxLen := config.MaxQueueLength
+		maxLen := 1 + p.MaxUpcoming
 		if len(queue) < maxLen {
 			maxLen = len(queue)
 		}
@@ -274,7 +283,7 @@ func (p *PlaybackState) AddUpcoming(memberId *string, tracks []*Track, playNext 
 		currentUpcoming = len(p.Queue)
 	}
 
-	slotsLeft := config.MaxUpcomingQueue - currentUpcoming
+	slotsLeft := p.MaxUpcoming - currentUpcoming
 	if slotsLeft <= 0 {
 		return false, "queue_full"
 	}
@@ -750,6 +759,25 @@ func (p *Party) handOver(m *Member) {
 	pb.UpdatedAtMs = now
 }
 
+// LearnDuration records the current track's length from the device playing
+// it, when the track arrived without one: chosen from a row that showed no
+// length, say. Every remote's progress bar needs it, and only a player knows it.
+// Reports true when it changed anything, for the caller to broadcast.
+func (p *Party) LearnDuration(member *Member, videoId string, durationMs int64) bool {
+	pb := p.Playback
+	if p.ClockMember() != member || pb.Track == nil || pb.Track.VideoId != videoId || durationMs <= 0 {
+		return false
+	}
+	if pb.Track.DurationMs != nil && *pb.Track.DurationMs > 0 {
+		return false
+	}
+	known := *pb.Track
+	known.DurationMs = &durationMs
+	pb.Track = &known
+	pb.Seq++
+	return true
+}
+
 // ExpectOutput marks a device being woken as the one to hand playback to when
 // it arrives. Only one at a time: waking a second replaces the first.
 func (p *Party) ExpectOutput(deviceId string) error {
@@ -1091,6 +1119,7 @@ func (p *Party) ToWire() map[string]interface{} {
 	return map[string]interface{}{
 		"code":            p.Code,
 		"kind":            p.Kind,
+		"maxUpcoming":     p.Playback.MaxUpcoming,
 		"createdAtMs":     p.CreatedAtMs,
 		"maxMembers":      p.MaxMembers,
 		"hostOnlyControl": p.HostOnlyControl,
@@ -1188,6 +1217,7 @@ func (s *PartyStore) Account(account string) *Party {
 	}
 	p := NewPartyWithMaxMembers(code, config.ConnectMaxDevices)
 	p.Kind = KindConnect
+	p.Playback.MaxUpcoming = config.ConnectMaxUpcoming
 	p.Account = account
 	s.parties[code] = p
 	return p

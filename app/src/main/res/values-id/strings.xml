@@ -1307,4 +1307,5 @@
     <string name="connect_cant_wake">Tidur · buka BitChord di perangkat itu</string>
     <string name="connect_waking">Membangunkan %1$s…</string>
     <string name="connect_push_hint">Untuk mengirim musik ke perangkat yang aplikasinya tertutup, pasang ntfy di sana dan atur server default ntfy ke %1$s.</string>
+    <string name="connect_in_a_jam">Sedang di Jam</string>
 </resources>

@@ -206,7 +206,7 @@ class PartyRemotePlayer(
         val chosen = mediaItems.toPartyTracks()
         if (chosen.isEmpty()) return Futures.immediateVoidFuture()
         val start = startIndex.takeIf { it != C.INDEX_UNSET }?.coerceIn(chosen.indices) ?: 0
-        val queue = chosen.subList(start, minOf(chosen.size, start + MAX_QUEUE))
+        val queue = chosen.subList(start, minOf(chosen.size, start + 1 + ListenTogether.state.value.maxUpcoming))
         val position = if (startPositionMs == C.TIME_UNSET) 0L else startPositionMs
         ListenTogether.setQueue(queue, 0)
         // Starting is the caller's next command (setMediaItems, prepare, play),
@@ -279,8 +279,5 @@ class PartyRemotePlayer(
 
     private companion object {
         const val ANSWER_TIMEOUT_MS = 2_500L
-
-        /** The current track and the 25 a party holds after it. */
-        const val MAX_QUEUE = 26
     }
 }

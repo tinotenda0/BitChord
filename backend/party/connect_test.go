@@ -1,6 +1,7 @@
 package party
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/KabirSinghBhatia/BitChord/backend/clock"
@@ -293,5 +294,50 @@ func TestAPlayingDeviceDoesNotStealAPartyThatIsPlaying(t *testing.T) {
 	tablet, _ := p.JoinConnect("gw:tino", "tablet001", "prod", "Tablet", "Tino", nil, true)
 	if !tablet.IsRemote() {
 		t.Fatalf("a party already playing elsewhere keeps its output")
+	}
+}
+
+func TestConnectHoldsAWholePlaylist(t *testing.T) {
+	p := connectParty(t)
+	phone := join(t, p, "phone0001", "prod")
+	album := make([]*Track, 120)
+	for i := range album {
+		album[i] = &Track{VideoId: fmt.Sprintf("t%d", i), FromContext: true}
+	}
+	p.Playback.SetQueue(&phone.MemberId, album, 0)
+	if len(p.Playback.Queue) != 120 {
+		t.Fatalf("a 120-track album must survive in Connect, got %d", len(p.Playback.Queue))
+	}
+	jam := NewParty("JAM002")
+	jam.Playback.SetQueue(nil, album, 0)
+	if len(jam.Playback.Queue) != 1+config.MaxUpcomingQueue {
+		t.Errorf("a jam keeps its own limit, got %d", len(jam.Playback.Queue))
+	}
+	if !p.Playback.Queue[5].FromContext {
+		t.Errorf("a track's section must survive the queue")
+	}
+}
+
+func TestTheClockFillsInAMissingDuration(t *testing.T) {
+	p := connectParty(t)
+	phone := join(t, p, "phone0001", "prod")
+	laptop := join(t, p, "laptop001", "prod")
+	p.Playback.SetTrack(&laptop.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
+	seq := p.Playback.Seq
+	if p.LearnDuration(laptop, "song", 200_000) {
+		t.Fatalf("only the device playing knows the length")
+	}
+	if !p.LearnDuration(phone, "song", 200_000) || *p.Playback.Track.DurationMs != 200_000 || p.Playback.Seq != seq+1 {
+		t.Fatalf("the clock's length must be taken and broadcast")
+	}
+	if p.LearnDuration(phone, "song", 199_000) {
+		t.Errorf("a known length is not overwritten")
+	}
+}
+
+func TestTrackFromWireKeepsItsSection(t *testing.T) {
+	tr := TrackFromWire(map[string]interface{}{"videoId": "a", "fromContext": true})
+	if tr == nil || !tr.FromContext {
+		t.Fatalf("fromContext must come through")
 	}
 }

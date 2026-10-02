@@ -1307,4 +1307,5 @@
     <string name="connect_cant_wake">休眠中 · 请在该设备上打开 BitChord</string>
     <string name="connect_waking">正在唤醒 %1$s…</string>
     <string name="connect_push_hint">要把音乐发送到已关闭应用的设备，请在该设备上安装 ntfy，并将 ntfy 的默认服务器设为 %1$s。</string>
+    <string name="connect_in_a_jam">正在 Jam 中</string>
 </resources>

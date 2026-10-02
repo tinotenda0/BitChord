@@ -1308,4 +1308,5 @@
     <string name="connect_cant_wake">スリープ中 · その端末で BitChord を開いてください</string>
     <string name="connect_waking">%1$s を起動しています…</string>
     <string name="connect_push_hint">アプリが閉じている端末に音楽を送るには、その端末に ntfy をインストールし、ntfy の既定のサーバーを %1$s に設定してください。</string>
+    <string name="connect_in_a_jam">Jam に参加中</string>
 </resources>

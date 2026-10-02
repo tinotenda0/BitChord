@@ -1158,34 +1158,19 @@ private fun BitChordApp(
                 ?: (0 until c.mediaItemCount).map { c.getMediaItemAt(it).toSong() }
             val currentIndex = c.currentMediaItemIndex
 
-            // A jam's queue is everybody's, so a pick slots into it. Connect is
-            // this user's own music, played wherever: an ordinary play.
-            if (ListenTogether.state.value.inJam) {
-                val selectedSong = songs.getOrNull(index) ?: return@launch
-                val party = ListenTogether.state.value
-                val partyQueue = party.queue.items
-                val partyIndex = partyQueue.indexOfFirst { it.videoId == party.playback.track?.videoId }
-                val upcomingPartyTracks = if (partyIndex >= 0) {
-                    partyQueue.drop(partyIndex + 1)
-                } else {
-                    emptyList()
-                }
-                val timeline = QueueCoordinator.buildPartyPlaybackQueue(
-                    tappedSong = selectedSong,
-                    source = source,
-                    upcomingPartyTracks = upcomingPartyTracks,
-                )
-                c.playSongs(timeline, 0)
-            } else {
-                val result = QueueCoordinator.buildContextQueue(
-                    currentTimeline = currentTimeline,
-                    currentIndex = currentIndex,
-                    newContextSongs = songs,
-                    selectedIndex = index,
-                    contextSource = source,
-                )
-                c.playSongs(result.timeline, result.startIndex)
-            }
+            // The same in a party as alone: the album or playlist the song was
+            // picked from comes with it, and anything queued by hand is kept in
+            // front of it. Tracks keep their section across the party (see
+            // PartyTrack.fromContext), so hand-queued picks from everybody in a
+            // jam are still recognised as such here.
+            val result = QueueCoordinator.buildContextQueue(
+                currentTimeline = currentTimeline,
+                currentIndex = currentIndex,
+                newContextSongs = songs,
+                selectedIndex = index,
+                contextSource = source,
+            )
+            c.playSongs(result.timeline, result.startIndex)
             // Start playback in the mini-player; the user opens the full view by tapping it.
         }
     }
@@ -1400,8 +1385,9 @@ private fun BitChordApp(
             controller?.let {
                 if (ListenTogether.state.value.inParty) {
                     val upcoming = (it.mediaItemCount - (it.currentMediaItemIndex + 1)).coerceAtLeast(0)
-                    if (upcoming >= 25) {
-                        showQueueNotice(context.getString(R.string.party_queue_full, 25))
+                    val limit = ListenTogether.state.value.maxUpcoming
+                    if (upcoming >= limit) {
+                        showQueueNotice(context.getString(R.string.party_queue_full, limit))
                         return@launch
                     }
                 }
@@ -1430,8 +1416,9 @@ private fun BitChordApp(
             controller?.let {
                 if (ListenTogether.state.value.inParty) {
                     val upcoming = (it.mediaItemCount - (it.currentMediaItemIndex + 1)).coerceAtLeast(0)
-                    if (upcoming >= 25) {
-                        showQueueNotice(context.getString(R.string.party_queue_full, 25))
+                    val limit = ListenTogether.state.value.maxUpcoming
+                    if (upcoming >= limit) {
+                        showQueueNotice(context.getString(R.string.party_queue_full, limit))
                         return@launch
                     }
                 }
@@ -1545,9 +1532,10 @@ private fun BitChordApp(
                 } else {
                     val toAdd = if (ListenTogether.state.value.inParty) {
                         val upcoming = (c.mediaItemCount - (c.currentMediaItemIndex + 1)).coerceAtLeast(0)
-                        val slotsLeft = (25 - upcoming).coerceAtLeast(0)
+                        val limit = ListenTogether.state.value.maxUpcoming
+                        val slotsLeft = (limit - upcoming).coerceAtLeast(0)
                         if (slotsLeft <= 0) {
-                            showQueueNotice(context.getString(R.string.party_queue_full, 25))
+                            showQueueNotice(context.getString(R.string.party_queue_full, limit))
                             return@launch
                         }
                         songs.take(slotsLeft)

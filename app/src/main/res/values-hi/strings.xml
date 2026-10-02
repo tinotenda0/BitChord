@@ -1327,4 +1327,5 @@
     <string name="connect_cant_wake">सो रहा है · उस पर BitChord खोलें</string>
     <string name="connect_waking">%1$s को जगाया जा रहा है…</string>
     <string name="connect_push_hint">जिस डिवाइस पर ऐप बंद है, उस पर संगीत भेजने के लिए उसमें ntfy इंस्टॉल करें और ntfy का डिफ़ॉल्ट सर्वर %1$s सेट करें।</string>
+    <string name="connect_in_a_jam">जैम में</string>
 </resources>

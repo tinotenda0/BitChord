@@ -170,6 +170,8 @@ object ListenTogether {
         val kind: String = KIND_JAM,
         /** Connect only: this account's devices, including the ones asleep. */
         val devices: List<ConnectDevice> = emptyList(),
+        /** See [PartySnapshot.maxUpcoming]. */
+        val maxUpcoming: Int = DEFAULT_MAX_UPCOMING,
         val you: PartyMember? = null,
         val members: List<PartyMember> = emptyList(),
         val maxMembers: Int = 5,
@@ -722,11 +724,11 @@ object ListenTogether {
      * Hands a previous process's slot back, so the others see them leave now
      * rather than when the server's disconnect grace sweeps it.
      */
-    private fun releaseStaleSlotOnServer(serverBase: String, code: String, held: String) {
+    private fun releaseStaleSlotOnServer(serverBase: String, code: String, held: String, reason: String? = null) {
         if (serverBase.isBlank() || code.isBlank() || held.isBlank()) return
         scope.launch {
             runCatching {
-                http.post("$serverBase/api/parties/$code/leave") {
+                http.post("$serverBase/api/parties/$code/leave" + (reason?.let { "?reason=$it" } ?: "")) {
                     header("Authorization", "Bearer $held")
                 }
             }.onFailure { failure ->
@@ -993,6 +995,7 @@ object ListenTogether {
             _state.value = State(
                 code = membership.code,
                 kind = membership.party.kind,
+                maxUpcoming = membership.party.maxUpcoming,
                 devices = membership.party.devices,
                 you = membership.you,
                 members = membership.party.members,
@@ -1063,6 +1066,7 @@ object ListenTogether {
             _state.value = State(
                 code = membership.code,
                 kind = membership.party.kind,
+                maxUpcoming = membership.party.maxUpcoming,
                 you = membership.you,
                 members = membership.party.members,
                 maxMembers = membership.party.maxMembers,
@@ -1129,6 +1133,7 @@ object ListenTogether {
             _state.value = State(
                 code = membership.code,
                 kind = membership.party.kind,
+                maxUpcoming = membership.party.maxUpcoming,
                 you = membership.you,
                 members = membership.party.members,
                 maxMembers = membership.party.maxMembers,
@@ -1270,6 +1275,7 @@ object ListenTogether {
                 _state.value = State(
                     code = membership.code,
                     kind = membership.party.kind,
+                    maxUpcoming = membership.party.maxUpcoming,
                     you = membership.you,
                     members = membership.party.members,
                     maxMembers = membership.party.maxMembers,
@@ -1290,6 +1296,10 @@ object ListenTogether {
     suspend fun leaveParty() = switchMutex.withLock { leaveLocked() }
 
     private suspend fun leaveLocked() {
+        // Leaving Connect only ever happens to go into a jam (or to switch
+        // Connect off, which the server learns by the device never returning).
+        // Saying which lets the account's other devices show it as busy.
+        val wasConnect = _state.value.isConnect && _connectEnabled.value
         withContext(Dispatchers.IO) {
             val code = _state.value.code
             val held = token
@@ -1303,7 +1313,7 @@ object ListenTogether {
             prefs.edit().remove(KEY_CODE).remove(KEY_TOKEN).apply()
             _state.value = State()
             if (code != null && held != null) {
-                releaseStaleSlotOnServer(currentServer, code, held)
+                releaseStaleSlotOnServer(currentServer, code, held, reason = if (wasConnect) "jam" else null)
             }
         }
     }
@@ -1588,7 +1598,7 @@ object ListenTogether {
      * and only once the offset is measured: without one the stamp would be a
      * guess, and the server would move the whole party onto it.
      */
-    fun reportMeasured(videoId: String, positionMs: Long) {
+    fun reportMeasured(videoId: String, positionMs: Long, durationMs: Long = 0L) {
         val state = _state.value
         if (!state.isClock || !state.clockSynced) return
         val atMs = clock.serverNowMs() ?: return
@@ -1599,6 +1609,7 @@ object ListenTogether {
             put("positionMs", positionMs)
             put("atMs", atMs)
             put("isPlaying", true)
+            if (durationMs > 0) put("durationMs", durationMs)
         })
     }
 
@@ -1616,6 +1627,7 @@ object ListenTogether {
                 _state.update { it.copy(
                     code = party.code,
                     kind = party.kind,
+                    maxUpcoming = party.maxUpcoming,
                     devices = party.devices,
                     you = you ?: it.you,
                     members = party.members,

@@ -1353,4 +1353,5 @@
     <string name="connect_cant_wake">Спит · откройте на нём BitChord</string>
     <string name="connect_waking">Пробуждаем %1$s…</string>
     <string name="connect_push_hint">Чтобы отправлять музыку на устройство с закрытым приложением, установите на него ntfy и укажите сервер ntfy по умолчанию: %1$s.</string>
+    <string name="connect_in_a_jam">В джеме</string>
 </resources>

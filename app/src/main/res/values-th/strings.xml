@@ -1313,4 +1313,5 @@
     <string name="connect_cant_wake">หลับอยู่ · เปิด BitChord บนเครื่องนั้น</string>
     <string name="connect_waking">กำลังปลุก %1$s…</string>
     <string name="connect_push_hint">หากต้องการส่งเพลงไปยังอุปกรณ์ที่ปิดแอปอยู่ ให้ติดตั้ง ntfy บนเครื่องนั้นและตั้งเซิร์ฟเวอร์เริ่มต้นของ ntfy เป็น %1$s</string>
+    <string name="connect_in_a_jam">อยู่ใน Jam</string>
 </resources>

@@ -1332,4 +1332,5 @@
     <string name="connect_cant_wake">במצב שינה · פתח בו את BitChord</string>
     <string name="connect_waking">מעיר את %1$s…</string>
     <string name="connect_push_hint">כדי לשלוח מוזיקה למכשיר שהאפליקציה בו סגורה, התקן בו את ntfy והגדר את שרת ברירת המחדל של ntfy ל־%1$s.</string>
+    <string name="connect_in_a_jam">בג׳אם</string>
 </resources>

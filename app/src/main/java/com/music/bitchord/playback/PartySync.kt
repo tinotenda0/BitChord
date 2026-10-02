@@ -190,6 +190,9 @@ class PartySync(
     /** When this device, as the party's clock, last reported its playhead. */
     private var lastClockReportMs = 0L
 
+    /** Whether this device was a remote at the last [reconcile]. */
+    private var wasRemote = false
+
     /** The party last heard from, and whether it has gone quiet since. See [reconcile]. */
     private var heardFrom: String? = null
     private var outOfTouch = false
@@ -518,7 +521,17 @@ class PartySync(
             deferredPlayPending = false
             startJob?.cancel()
             player()?.takeIf { it.playWhenReady }?.pause()
+            wasRemote = true
             return
+        }
+        // Handed playback, which is a request to play here: nothing left over
+        // from before this device was a remote (a call that took the audio, a
+        // listener's own pause in a locked jam) gets to keep it silent.
+        if (wasRemote) {
+            wasRemote = false
+            focusLost = false
+            locallyPaused = false
+            rejoining = false
         }
         if (SystemClock.elapsedRealtime() < reconcileQuietUntilMs) return
         // Another app has the audio. Following the party from here means seeking
@@ -695,7 +708,7 @@ class PartySync(
             val now = SystemClock.elapsedRealtime()
             if (now - lastClockReportMs >= CLOCK_REPORT_MS) {
                 lastClockReportMs = now
-                ListenTogether.reportMeasured(track.videoId, exo.currentPosition)
+                ListenTogether.reportMeasured(track.videoId, exo.currentPosition, exo.duration)
             }
             return
         }
@@ -836,20 +849,23 @@ class PartySync(
         val rawTrackIndex = rawLocalItems.indexOfFirst { it.mediaId == track.videoId }
         val localItems = if (rawTrackIndex >= 0) {
             val pastAndCurrent = rawLocalItems.subList(0, rawTrackIndex + 1)
+            // The album or playlist being played is part of what the party
+            // plays. Leaving it out made the party's queue the current song
+            // alone, which AutoPlay then filled with songs like it, and every
+            // device trimmed its own playlist to match.
             val upcoming = rawLocalItems.subList(rawTrackIndex + 1, rawLocalItems.size)
-                .filter { it.queueTier != QueueTier.CONTEXT }
             pastAndCurrent + upcoming
         } else {
-            rawLocalItems.filter { it.queueTier != QueueTier.CONTEXT }
+            rawLocalItems
         }
 
         val localIds = localItems.map { it.mediaId }
         val trackIndex = localIds.indexOf(track.videoId)
         val clampedIds = if (trackIndex >= 0) {
-            val upcomingEnd = (trackIndex + 1 + MAX_PARTY_UPCOMING_QUEUE).coerceAtMost(localIds.size)
+            val upcomingEnd = (trackIndex + 1 + party.maxUpcoming).coerceAtMost(localIds.size)
             localIds.subList(0, upcomingEnd)
         } else {
-            localIds.take(1 + MAX_PARTY_UPCOMING_QUEUE)
+            localIds.take(1 + party.maxUpcoming)
         }
 
         // Covers the ways a running order changes without the playhead moving —
@@ -867,7 +883,7 @@ class PartySync(
         if (party.playback.track?.videoId != track.videoId && clampedIds.size == 1 && upcomingPartyTracks.isNotEmpty()) {
             val toPreserve = upcomingPartyTracks
                 .filterNot { it.fromAutoplay }
-                .take(MAX_PARTY_UPCOMING_QUEUE)
+                .take(party.maxUpcoming)
             if (exo.mediaItemCount == 1 && toPreserve.isNotEmpty()) {
                 exo.addMediaItems(toPreserve.map { it.toSong().toMediaItem() })
             }
@@ -963,15 +979,8 @@ class PartySync(
         val song = exo.currentMediaItem?.toSong() ?: return
         if (song.isDeviceFile()) return
         Log.i(TAG, "seeding the new party with what this device is already playing")
-        val currentIndex = exo.currentMediaItemIndex
-        if (currentIndex >= 0 && currentIndex + 1 < exo.mediaItemCount) {
-            val toKeep = (currentIndex + 1 until exo.mediaItemCount)
-                .map { exo.getMediaItemAt(it) }
-                .filter { it.queueTier != QueueTier.CONTEXT }
-            if (toKeep.size != exo.mediaItemCount - (currentIndex + 1)) {
-                exo.replaceMediaItems(currentIndex + 1, exo.mediaItemCount, toKeep)
-            }
-        }
+        // The rest of the album or playlist stays: it is what this device was
+        // going to play next, and now so is the party.
         publish()
     }
 
@@ -1014,7 +1023,7 @@ class PartySync(
         val partyIndex = partyQueue.indexOfFirst { it.videoId == currentMediaId }
         if (partyIndex < 0) return
 
-        val desiredUpcoming = partyQueue.subList(partyIndex + 1, partyQueue.size).take(MAX_PARTY_UPCOMING_QUEUE)
+        val desiredUpcoming = partyQueue.subList(partyIndex + 1, partyQueue.size).take(party.maxUpcoming)
         val desiredUpcomingIds = desiredUpcoming.map { it.videoId }
 
         val localUpcomingIds = (currentIndex + 1 until exo.mediaItemCount).map {
@@ -1027,6 +1036,13 @@ class PartySync(
             // its decoder and audio renderer untouched on every device.
             if (desiredUpcomingIds.startsWith(localUpcomingIds)) {
                 exo.addMediaItems(desiredUpcoming.drop(localUpcomingIds.size).map { it.toSong().toMediaItem() })
+                return
+            }
+
+            // The party holds as much of a long playlist as it can and no
+            // more; the device that is playing it keeps the rest, and the
+            // party's window moves along it as the songs go by.
+            if (desiredUpcomingIds.size >= party.maxUpcoming && localUpcomingIds.startsWith(desiredUpcomingIds)) {
                 return
             }
 
@@ -1158,10 +1174,7 @@ class PartySync(
         const val INTENT_QUIET_MS = 4_500L
 
         /** Maximum upcoming tracks in a party queue excluding the currently playing one. */
-        const val MAX_PARTY_UPCOMING_QUEUE = 25
 
-        /** The server's own ceiling; publishing more would only be truncated. */
-        const val MAX_PUBLISHED_QUEUE = 1 + MAX_PARTY_UPCOMING_QUEUE
     }
 }
 
@@ -1195,6 +1208,7 @@ internal fun Song.toPartyTrack(playerDurationMs: Long): PartyTrack = PartyTrack(
     durationMs = playerDurationMs.takeIf { it > 0L }
         ?: TrackMatcher.secondsOf(durationText)?.let { it * 1000L },
     fromAutoplay = fromAutoplay,
+    fromContext = queueTier == QueueTier.CONTEXT,
 )
 
 internal fun PartyTrack.toSong(): Song = Song(
@@ -1209,7 +1223,11 @@ internal fun PartyTrack.toSong(): Song = Song(
         val total = ms / 1000
         "%d:%02d".format(total / 60, total % 60)
     },
-    queueTier = if (fromAutoplay) QueueTier.AUTOPLAY else QueueTier.USER_QUEUE,
+    queueTier = when {
+        fromAutoplay -> QueueTier.AUTOPLAY
+        fromContext -> QueueTier.CONTEXT
+        else -> QueueTier.USER_QUEUE
+    },
 )
 
 internal data class QueueMoveDelta(

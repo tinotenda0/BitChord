@@ -363,8 +363,14 @@ func withDevices(p *party.Party, wire map[string]interface{}) map[string]interfa
 	}
 	known := registry.List(p.Account)
 	list := make([]map[string]interface{}, 0, len(known))
+	now := clock.NowMs()
 	for _, d := range known {
+		status := d.Status
+		if status != "" && now-d.StatusAtMs > config.JamStatusMs {
+			status = ""
+		}
 		list = append(list, map[string]interface{}{
+			"status":     status,
 			"deviceId":   d.DeviceId,
 			"deviceKey":  d.DeviceKey,
 			"app":        d.App,
@@ -579,6 +585,9 @@ func handleLeaveParty(w http.ResponseWriter, r *http.Request) {
 	}
 
 	memberId := member.MemberId
+	if p.IsConnect() && r.URL.Query().Get("reason") == "jam" {
+		registry.SetStatus(p.Account, member.DeviceId, "jam", clock.NowMs())
+	}
 	p.Remove(memberId)
 	membersFrame := membersFrame(p)
 	p.Unlock()
@@ -982,6 +991,9 @@ func handleSocketFrame(p *party.Party, member *party.Member, sc *hub.SafeConn, f
 				atMs = int64(at)
 			}
 			videoId, _ := frame["videoId"].(string)
+			if dur, ok := frame["durationMs"].(float64); ok && p.LearnDuration(member, videoId, int64(dur)) {
+				hubInst.Broadcast(p.Code, stateFrame(p), "")
+			}
 			if p.Reanchor(member, videoId, int64(posNum), atMs, now) {
 				log.Printf("party %s: re-anchored onto %s at %dms", p.Code, member.DisplayName, int64(posNum))
 				hubInst.Broadcast(p.Code, stateFrame(p), "")
@@ -1005,6 +1017,11 @@ func handleSocketFrame(p *party.Party, member *party.Member, sc *hub.SafeConn, f
 
 		queueBefore := p.Playback.QueueSeq
 		action, _ := frame["action"].(string)
+		// One person's own devices: which of them did what is the first thing
+		// to look at when playback does something nobody asked for.
+		if p.IsConnect() {
+			log.Printf("connect %s: %s (%s) sent %s", p.Code, member.DeviceName, member.App, action)
+		}
 		success, errCode, errMsg := applyControl(p, member, action, frame)
 		if success {
 			p.Touch()
@@ -1123,7 +1140,7 @@ func applyControl(p *party.Party, member *party.Member, action string, frame map
 		ok, reason := p.Playback.AddUpcoming(&member.MemberId, tracksToAdd, playNext)
 		if !ok {
 			if reason == "queue_full" {
-				return false, "queue_full", fmt.Sprintf("Queue is full (maximum %d upcoming songs).", config.MaxUpcomingQueue)
+				return false, "queue_full", fmt.Sprintf("Queue is full (maximum %d upcoming songs).", p.Playback.MaxUpcoming)
 			}
 			return false, reason, "Could not add track to queue."
 		}

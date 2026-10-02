@@ -169,6 +169,9 @@ private data class DeviceEntry(
     /** Not connected at all, so reaching it means waking it. */
     val sleeping: Boolean get() = member == null || !member.connected
 
+    /** Away from Connect because it is in a jam, not because it is asleep. */
+    val inJam: Boolean get() = sleeping && known?.status == "jam"
+
     fun isOutput(outputId: String?): Boolean = member != null && member.memberId == outputId
 
     /**
@@ -178,6 +181,9 @@ private data class DeviceEntry(
     fun action(outputId: String?): (() -> Unit)? = when {
         isOutput(outputId) -> null
         member != null && member.connected -> { { ListenTogether.transfer(member.memberId) } }
+        // Busy in a jam: waking it would drag it out of that, which is its
+        // owner's call to make on that device, not this one's.
+        inJam -> null
         known != null && known.wakeable -> { { ListenTogether.wake(known.deviceId) } }
         else -> null
     }
@@ -194,6 +200,7 @@ private fun appLabel(app: String): String = when (app) {
 private fun statusFor(entry: DeviceEntry, outputId: String?): String? = when {
     entry.isOutput(outputId) -> stringResource(R.string.connect_playing)
     !entry.sleeping -> null
+    entry.inJam -> stringResource(R.string.connect_in_a_jam)
     entry.known?.wakeable == true -> stringResource(R.string.connect_asleep)
     else -> stringResource(R.string.connect_cant_wake)
 }

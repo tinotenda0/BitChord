@@ -1332,4 +1332,5 @@
     <string name="connect_cant_wake">Em repouso · abra o BitChord nele</string>
     <string name="connect_waking">Acordando %1$s…</string>
     <string name="connect_push_hint">Para enviar música a um dispositivo com o app fechado, instale o ntfy nele e defina o servidor padrão do ntfy como %1$s.</string>
+    <string name="connect_in_a_jam">Em uma Jam</string>
 </resources>
