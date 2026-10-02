@@ -35,6 +35,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.bitchord.R
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import com.music.bitchord.data.listentogether.ConnectDevice
 import com.music.bitchord.data.listentogether.ListenTogether
 import com.music.bitchord.data.listentogether.PartyMember
 import com.music.bitchord.ui.haptics.Haptic
@@ -59,15 +62,30 @@ internal fun ConnectDevicesSheet(
     modifier: Modifier = Modifier,
 ) {
     val state by ListenTogether.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val you = state.you
     val outputId = state.output?.memberId
+    // Connected devices are members; the rest of what the server remembers are
+    // asleep, and are listed too so playback can be sent to them. A device that
+    // is both (still a member, just away) is listed once, as the member.
+    val entries = state.members.map { member ->
+        DeviceEntry(
+            deviceKey = member.deviceKey.ifBlank { member.memberId },
+            app = member.app,
+            deviceName = member.deviceName.ifBlank { member.displayName },
+            member = member,
+            known = state.devices.firstOrNull { it.deviceKey == member.deviceKey && it.app == member.app },
+        )
+    } + state.devices
+        .filter { known -> state.members.none { it.deviceKey == known.deviceKey && it.app == known.app } }
+        .map { DeviceEntry(it.deviceKey, it.app, it.deviceName, member = null, known = it) }
     // This phone first, then wherever the music is, then everything else by name.
-    val groups = state.members
-        .groupBy { it.deviceKey.ifBlank { it.memberId } }
+    val groups = entries
+        .groupBy { it.deviceKey }
         .values
         .sortedWith(
-            compareByDescending<List<PartyMember>> { group -> group.any { it.memberId == you?.memberId } }
-                .thenByDescending { group -> group.any { it.memberId == outputId } }
+            compareByDescending<List<DeviceEntry>> { group -> group.any { it.member?.memberId == you?.memberId } }
+                .thenByDescending { group -> group.any { it.member?.memberId == outputId } }
                 .thenBy { group -> group.first().deviceName.lowercase() },
         )
 
@@ -83,16 +101,28 @@ internal fun ConnectDevicesSheet(
         ) {
             groups.forEach { group ->
                 val isThisPhone = group.any { it.deviceKey.isNotBlank() && it.deviceKey == you?.deviceKey }
-                val phoneName = group.first().deviceName.ifBlank { group.first().displayName }
+                val phoneName = group.first().deviceName
                 val title = if (isThisPhone) stringResource(R.string.connect_this_phone, phoneName) else phoneName
+                val waking = stringResource(R.string.connect_waking, phoneName)
+                val act: (DeviceEntry) -> (() -> Unit)? = { entry ->
+                    entry.action(outputId)?.let { run ->
+                        {
+                            if (entry.sleeping) Toast.makeText(context, waking, Toast.LENGTH_SHORT).show()
+                            run()
+                            onDismiss()
+                        }
+                    }
+                }
                 if (group.size == 1) {
-                    val member = group.single()
+                    val entry = group.single()
+                    val status = statusFor(entry, outputId)
                     DeviceRow(
                         icon = Icons.Rounded.PhoneAndroid,
                         title = title,
-                        subtitle = subtitleFor(member, member.memberId == outputId),
-                        lit = member.memberId == outputId,
-                        onClick = transferTo(member, outputId, onDismiss),
+                        subtitle = status?.let { "${appLabel(entry.app)} · $it" } ?: appLabel(entry.app),
+                        lit = entry.isOutput(outputId),
+                        dim = entry.sleeping,
+                        onClick = act(entry),
                     )
                 } else {
                     // Two builds of the app on one phone: the phone once, each
@@ -103,13 +133,14 @@ internal fun ConnectDevicesSheet(
                         color = Color.White.copy(alpha = 0.6f),
                         modifier = Modifier.padding(start = 6.dp, top = 6.dp),
                     )
-                    group.sortedBy { it.app != "prod" }.forEach { member ->
+                    group.sortedBy { it.app != "prod" }.forEach { entry ->
                         DeviceRow(
                             icon = Icons.Rounded.PhoneAndroid,
-                            title = appLabel(member.app),
-                            subtitle = statusFor(member, member.memberId == outputId),
-                            lit = member.memberId == outputId,
-                            onClick = transferTo(member, outputId, onDismiss),
+                            title = appLabel(entry.app),
+                            subtitle = statusFor(entry, outputId),
+                            lit = entry.isOutput(outputId),
+                            dim = entry.sleeping,
+                            onClick = act(entry),
                         )
                     }
                 }
@@ -127,12 +158,28 @@ internal fun ConnectDevicesSheet(
     }
 }
 
-/** Null when there is nothing to do: already playing there, or not reachable. */
-private fun transferTo(member: PartyMember, outputId: String?, onDismiss: () -> Unit): (() -> Unit)? {
-    if (member.memberId == outputId || !member.connected) return null
-    return {
-        ListenTogether.transfer(member.memberId)
-        onDismiss()
+/** One build on one phone: connected (a member), asleep (only remembered), or both. */
+private data class DeviceEntry(
+    val deviceKey: String,
+    val app: String,
+    val deviceName: String,
+    val member: PartyMember?,
+    val known: ConnectDevice?,
+) {
+    /** Not connected at all, so reaching it means waking it. */
+    val sleeping: Boolean get() = member == null || !member.connected
+
+    fun isOutput(outputId: String?): Boolean = member != null && member.memberId == outputId
+
+    /**
+     * What tapping it does: move playback there, wake it to do so, or nothing
+     * (already playing there, or asleep with no way to wake it).
+     */
+    fun action(outputId: String?): (() -> Unit)? = when {
+        isOutput(outputId) -> null
+        member != null && member.connected -> { { ListenTogether.transfer(member.memberId) } }
+        known != null && known.wakeable -> { { ListenTogether.wake(known.deviceId) } }
+        else -> null
     }
 }
 
@@ -144,16 +191,11 @@ private fun appLabel(app: String): String = when (app) {
 }
 
 @Composable
-private fun statusFor(member: PartyMember, playing: Boolean): String? = when {
-    playing -> stringResource(R.string.connect_playing)
-    !member.connected -> stringResource(R.string.listen_together_away)
-    else -> null
-}
-
-@Composable
-private fun subtitleFor(member: PartyMember, playing: Boolean): String {
-    val app = appLabel(member.app)
-    return statusFor(member, playing)?.let { "$app · $it" } ?: app
+private fun statusFor(entry: DeviceEntry, outputId: String?): String? = when {
+    entry.isOutput(outputId) -> stringResource(R.string.connect_playing)
+    !entry.sleeping -> null
+    entry.known?.wakeable == true -> stringResource(R.string.connect_asleep)
+    else -> stringResource(R.string.connect_cant_wake)
 }
 
 @Composable
@@ -163,6 +205,7 @@ private fun DeviceRow(
     subtitle: String?,
     lit: Boolean,
     onClick: (() -> Unit)?,
+    dim: Boolean = false,
 ) {
     val haptics = rememberHaptics()
     Row(
@@ -207,7 +250,7 @@ private fun DeviceRow(
                 style = MaterialTheme.typography.bodyLarge.copy(
                     fontWeight = if (lit) FontWeight.SemiBold else FontWeight.Normal,
                 ),
-                color = if (lit) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = 0.85f),
+                color = if (lit) MaterialTheme.colorScheme.primary else Color.White.copy(alpha = if (dim) 0.6f else 0.85f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

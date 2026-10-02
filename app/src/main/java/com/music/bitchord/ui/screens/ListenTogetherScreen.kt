@@ -1170,8 +1170,20 @@ private fun elapsed(ms: Long): String {
 private fun ConnectSetting() {
     val enabled by ListenTogether.connectEnabled.collectAsStateWithLifecycle()
     val signedIn by com.music.bitchord.gateway.Gateway.username.collectAsStateWithLifecycle()
+    val pushEndpoint by ListenTogether.pushEndpoint.collectAsStateWithLifecycle()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // Without a push distributor this device can be driven while its app is
+    // open but never woken, which is worth saying since it is easily fixed.
+    val noDistributor = remember(pushEndpoint) {
+        pushEndpoint == null &&
+            org.unifiedpush.android.connector.UnifiedPush.getDistributors(context).isEmpty()
+    }
     SettingsGroup(
-        footer = if (signedIn.isEmpty()) stringResource(R.string.connect_needs_gateway) else null,
+        footer = when {
+            signedIn.isEmpty() -> stringResource(R.string.connect_needs_gateway)
+            enabled && noDistributor -> stringResource(R.string.connect_push_hint, "https://ntfy.tinotenda.co")
+            else -> null
+        },
     ) {
         SettingsRow(
             icon = Icons.Rounded.Devices,

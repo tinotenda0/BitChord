@@ -1328,4 +1328,8 @@
     <string name="connect_setting">חיבור למכשירים שלי</string>
     <string name="connect_setting_subtitle">המכשירים המחוברים שלך מוצאים זה את זה: שלוט באחד מהשני או העבר את המוזיקה ביניהם.</string>
     <string name="connect_needs_gateway">התחבר לחשבון שלך בהגדרות כדי להשתמש ב־Connect.</string>
+    <string name="connect_asleep">במצב שינה · הקש כדי לנגן כאן</string>
+    <string name="connect_cant_wake">במצב שינה · פתח בו את BitChord</string>
+    <string name="connect_waking">מעיר את %1$s…</string>
+    <string name="connect_push_hint">כדי לשלוח מוזיקה למכשיר שהאפליקציה בו סגורה, התקן בו את ntfy והגדר את שרת ברירת המחדל של ntfy ל־%1$s.</string>
 </resources>

@@ -1328,4 +1328,8 @@
     <string name="connect_setting">Conectar aos meus dispositivos</string>
     <string name="connect_setting_subtitle">Seus dispositivos conectados se encontram: controle um a partir de outro ou mova a música entre eles.</string>
     <string name="connect_needs_gateway">Entre na sua conta em Configurações para usar o Connect.</string>
+    <string name="connect_asleep">Em repouso · toque para tocar aqui</string>
+    <string name="connect_cant_wake">Em repouso · abra o BitChord nele</string>
+    <string name="connect_waking">Acordando %1$s…</string>
+    <string name="connect_push_hint">Para enviar música a um dispositivo com o app fechado, instale o ntfy nele e defina o servidor padrão do ntfy como %1$s.</string>
 </resources>

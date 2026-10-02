@@ -1324,4 +1324,8 @@
     <string name="connect_setting">Me connecter à mes appareils</string>
     <string name="connect_setting_subtitle">Vos appareils connectés se trouvent entre eux : contrôlez-en un depuis un autre ou déplacez la musique de l’un à l’autre.</string>
     <string name="connect_needs_gateway">Connectez-vous à votre compte dans les Paramètres pour utiliser Connect.</string>
+    <string name="connect_asleep">En veille · touchez pour lire ici</string>
+    <string name="connect_cant_wake">En veille · ouvrez BitChord dessus</string>
+    <string name="connect_waking">Réveil de %1$s…</string>
+    <string name="connect_push_hint">Pour envoyer de la musique vers un appareil dont l’app est fermée, installez-y ntfy et réglez son serveur par défaut sur %1$s.</string>
 </resources>

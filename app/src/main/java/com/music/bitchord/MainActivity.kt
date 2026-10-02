@@ -1,5 +1,7 @@
 package com.music.bitchord
 
+import kotlinx.coroutines.flow.distinctUntilChanged
+import androidx.lifecycle.lifecycleScope
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -273,6 +275,39 @@ internal fun shouldSkipAfterDislike(
 
 
 class MainActivity : AppCompatActivity() {
+    /**
+     * Connect: registers this device for the push that wakes it when another of
+     * the account's devices asks to play here. See
+     * [com.music.bitchord.playback.ConnectPushService].
+     *
+     * Here rather than at process start because picking a distributor the first
+     * time may ask the user which app delivers pushes, and that needs an
+     * activity. Registering again on every launch is what UnifiedPush asks for:
+     * it is how a distributor that was uninstalled or reset gets noticed. With no
+     * distributor installed it does nothing, and the device simply cannot be
+     * woken from elsewhere.
+     */
+    private fun followConnectPush() {
+        lifecycleScope.launch {
+            kotlinx.coroutines.flow.combine(
+                com.music.bitchord.gateway.Gateway.username,
+                ListenTogether.connectEnabled,
+            ) { user, on -> user.isNotEmpty() && on }
+                .distinctUntilChanged()
+                .collect { wanted ->
+                    val activity = this@MainActivity
+                    if (wanted) {
+                        org.unifiedpush.android.connector.UnifiedPush.tryUseCurrentOrDefaultDistributor(activity) { ok ->
+                            if (ok) org.unifiedpush.android.connector.UnifiedPush.register(activity)
+                        }
+                    } else if (ListenTogether.pushEndpoint.value != null) {
+                        org.unifiedpush.android.connector.UnifiedPush.unregister(activity)
+                        ListenTogether.setPushEndpoint(null)
+                    }
+                }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -282,6 +317,7 @@ class MainActivity : AppCompatActivity() {
         JamInviteLink.consume(intent)
         // Likewise for a link tapped or shared from another app — see [MusicLink].
         MusicLink.consume(intent)
+        followConnectPush()
         setContent {
             val theme by AppSettings.themeMode.collectAsStateWithLifecycle()
             val highPerformance by AppSettings.highPerformanceMode.collectAsStateWithLifecycle()

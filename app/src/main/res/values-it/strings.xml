@@ -1262,4 +1262,8 @@
     <string name="connect_setting">Connetti ai miei dispositivi</string>
     <string name="connect_setting_subtitle">I tuoi dispositivi con accesso si trovano a vicenda: controllane uno da un altro o sposta la musica tra di essi.</string>
     <string name="connect_needs_gateway">Accedi al tuo account nelle Impostazioni per usare Connect.</string>
+    <string name="connect_asleep">In standby · tocca per riprodurre qui</string>
+    <string name="connect_cant_wake">In standby · apri BitChord su di esso</string>
+    <string name="connect_waking">Risveglio di %1$s…</string>
+    <string name="connect_push_hint">Per inviare musica a un dispositivo con l’app chiusa, installa ntfy e imposta %1$s come server predefinito di ntfy.</string>
 </resources>

@@ -168,6 +168,8 @@ object ListenTogether {
         val code: String? = null,
         /** [KIND_JAM] or [KIND_CONNECT]. See [isConnect]. */
         val kind: String = KIND_JAM,
+        /** Connect only: this account's devices, including the ones asleep. */
+        val devices: List<ConnectDevice> = emptyList(),
         val you: PartyMember? = null,
         val members: List<PartyMember> = emptyList(),
         val maxMembers: Int = 5,
@@ -676,6 +678,7 @@ object ListenTogether {
 
         appContext = context.applicationContext
         _connectEnabled.value = prefs.getBoolean(KEY_CONNECT, true)
+        _pushEndpoint.value = prefs.getString(KEY_PUSH_ENDPOINT, null)
         val code = prefs.getString(KEY_CODE, null)
         val saved = prefs.getString(KEY_TOKEN, null)
         prefs.edit().remove(KEY_CODE).remove(KEY_TOKEN).apply()
@@ -806,6 +809,44 @@ object ListenTogether {
     private var homeRetryAtMs = 0L
     private var homeFailures = 0
 
+    private val _pushEndpoint = MutableStateFlow<String?>(null)
+
+    /** This device's UnifiedPush endpoint, or null when it cannot be woken. */
+    val pushEndpoint: StateFlow<String?> = _pushEndpoint.asStateFlow()
+
+    /**
+     * A new (or withdrawn) push endpoint from the distributor. The server only
+     * learns endpoints at sign-in, so a change while in Connect signs in again,
+     * as the same device, to hand it over.
+     */
+    fun setPushEndpoint(endpoint: String?) {
+        if (endpoint == _pushEndpoint.value) return
+        _pushEndpoint.value = endpoint
+        prefs.edit().apply {
+            if (endpoint == null) remove(KEY_PUSH_ENDPOINT) else putString(KEY_PUSH_ENDPOINT, endpoint)
+        }.apply()
+        if (endpoint != null && _state.value.isConnect) {
+            scope.launch {
+                runCatching {
+                    switchMutex.withLock {
+                        if (_state.value.isConnect) connectHome(activePartyServerBase ?: resolveHttpBase(effectiveIdleServerBase()))
+                    }
+                }.onFailure { Log.i(TAG, "could not hand the new push endpoint over: ${redact(it.message)}") }
+            }
+        }
+    }
+
+    /**
+     * Woken by a push: another of this account's devices wants to play here.
+     * Signs in now, past any backoff, since the server is holding playback for
+     * this device and only for a minute or so.
+     */
+    fun wakeForTakeover() {
+        homeRetryAtMs = 0L
+        homeFailures = 0
+        ensureHome()
+    }
+
     fun setConnectEnabled(enabled: Boolean) {
         _connectEnabled.value = enabled
         prefs.edit().putBoolean(KEY_CONNECT, enabled).apply()
@@ -870,6 +911,7 @@ object ListenTogether {
                     deviceName = DeviceIdentity.name(appContext),
                     displayName = who?.name ?: user,
                     avatarUrl = who?.avatar,
+                    pushEndpoint = _pushEndpoint.value,
                 ),
             )
         }
@@ -887,6 +929,7 @@ object ListenTogether {
             _state.value = State(
                 code = membership.code,
                 kind = membership.party.kind,
+                devices = membership.party.devices,
                 you = membership.you,
                 members = membership.party.members,
                 maxMembers = membership.party.maxMembers,
@@ -1254,6 +1297,12 @@ object ListenTogether {
     /** Connect only: move playback to another of this account's devices. */
     fun transfer(memberId: String) = control("transfer") { put("memberId", memberId) }
 
+    /**
+     * Connect only: move playback to a device that is asleep. The server pushes
+     * to it, and hands it playback when it signs in.
+     */
+    fun wake(deviceId: String) = control("wake") { put("deviceId", deviceId) }
+
     fun setAutoplay(enabled: Boolean) = control("setAutoplay") { put("enabled", enabled) }
 
     /** Host only, and refused by the server from anybody else. @see State.controlsLocked */
@@ -1492,6 +1541,7 @@ object ListenTogether {
                 _state.update { it.copy(
                     code = party.code,
                     kind = party.kind,
+                    devices = party.devices,
                     you = you ?: it.you,
                     members = party.members,
                     maxMembers = party.maxMembers,
@@ -1573,6 +1623,16 @@ object ListenTogether {
                         you = current.you
                             ?.let { mine -> members.firstOrNull { it.memberId == mine.memberId } }
                             ?: current.you,
+                        devices = frame["devices"]
+                            ?.let {
+                                runCatching {
+                                    json.decodeFromJsonElement(
+                                        kotlinx.serialization.builtins.ListSerializer(ConnectDevice.serializer()),
+                                        it,
+                                    )
+                                }.getOrNull()
+                            }
+                            ?: current.devices,
                     )
                 }
             }
@@ -1881,6 +1941,7 @@ object ListenTogether {
     private const val KEY_NICKNAME = "party_nickname"
     private const val KEY_KICKED = "party_kicked_until"
     private const val KEY_CONNECT = "connect_enabled"
+    private const val KEY_PUSH_ENDPOINT = "connect_push_endpoint"
 
     /** How long a removal keeps this device out of that party. */
     private const val KICK_BLOCK_MS = 24L * 60 * 60 * 1000

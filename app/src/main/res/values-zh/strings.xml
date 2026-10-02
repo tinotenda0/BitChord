@@ -1303,4 +1303,8 @@
     <string name="connect_setting">连接到我的设备</string>
     <string name="connect_setting_subtitle">你已登录的设备会相互发现：用一台控制另一台，或在它们之间移动音乐。</string>
     <string name="connect_needs_gateway">请在设置中登录你的账户以使用 Connect。</string>
+    <string name="connect_asleep">休眠中 · 点按以在此播放</string>
+    <string name="connect_cant_wake">休眠中 · 请在该设备上打开 BitChord</string>
+    <string name="connect_waking">正在唤醒 %1$s…</string>
+    <string name="connect_push_hint">要把音乐发送到已关闭应用的设备，请在该设备上安装 ntfy，并将 ntfy 的默认服务器设为 %1$s。</string>
 </resources>

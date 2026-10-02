@@ -1303,4 +1303,8 @@
     <string name="connect_setting">Hubungkan ke perangkat saya</string>
     <string name="connect_setting_subtitle">Perangkat yang masuk ke akunmu saling menemukan: kendalikan satu dari yang lain, atau pindahkan musik di antaranya.</string>
     <string name="connect_needs_gateway">Masuk ke akunmu di Setelan untuk memakai Connect.</string>
+    <string name="connect_asleep">Tidur · ketuk untuk memutar di sini</string>
+    <string name="connect_cant_wake">Tidur · buka BitChord di perangkat itu</string>
+    <string name="connect_waking">Membangunkan %1$s…</string>
+    <string name="connect_push_hint">Untuk mengirim musik ke perangkat yang aplikasinya tertutup, pasang ntfy di sana dan atur server default ntfy ke %1$s.</string>
 </resources>

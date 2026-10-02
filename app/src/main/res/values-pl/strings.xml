@@ -1361,4 +1361,8 @@
     <string name="connect_setting">Połącz z moimi urządzeniami</string>
     <string name="connect_setting_subtitle">Twoje zalogowane urządzenia znajdują się nawzajem: steruj jednym z drugiego lub przenoś między nimi muzykę.</string>
     <string name="connect_needs_gateway">Zaloguj się na swoje konto w Ustawieniach, aby korzystać z Connect.</string>
+    <string name="connect_asleep">Uśpione · dotknij, aby odtwarzać tutaj</string>
+    <string name="connect_cant_wake">Uśpione · otwórz na nim BitChord</string>
+    <string name="connect_waking">Wybudzanie %1$s…</string>
+    <string name="connect_push_hint">Aby wysyłać muzykę na urządzenie z zamkniętą aplikacją, zainstaluj na nim ntfy i ustaw domyślny serwer ntfy na %1$s.</string>
 </resources>

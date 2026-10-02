@@ -1295,4 +1295,8 @@
     <string name="connect_setting">Conectar con mis dispositivos</string>
     <string name="connect_setting_subtitle">Tus dispositivos con sesión iniciada se encuentran entre sí: controla uno desde otro o mueve la música entre ellos.</string>
     <string name="connect_needs_gateway">Inicia sesión en tu cuenta en Ajustes para usar Connect.</string>
+    <string name="connect_asleep">Dormido · toca para reproducir aquí</string>
+    <string name="connect_cant_wake">Dormido · abre BitChord en él</string>
+    <string name="connect_waking">Despertando %1$s…</string>
+    <string name="connect_push_hint">Para enviar música a un dispositivo con la app cerrada, instala ntfy en él y pon %1$s como servidor predeterminado de ntfy.</string>
 </resources>

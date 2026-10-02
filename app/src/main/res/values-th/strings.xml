@@ -1309,4 +1309,8 @@
     <string name="connect_setting">เชื่อมต่อกับอุปกรณ์ของฉัน</string>
     <string name="connect_setting_subtitle">อุปกรณ์ที่ลงชื่อเข้าใช้ของคุณจะค้นหากันเอง: ควบคุมเครื่องหนึ่งจากอีกเครื่อง หรือย้ายเพลงระหว่างกัน</string>
     <string name="connect_needs_gateway">ลงชื่อเข้าใช้บัญชีของคุณในการตั้งค่าเพื่อใช้ Connect</string>
+    <string name="connect_asleep">หลับอยู่ · แตะเพื่อเล่นที่นี่</string>
+    <string name="connect_cant_wake">หลับอยู่ · เปิด BitChord บนเครื่องนั้น</string>
+    <string name="connect_waking">กำลังปลุก %1$s…</string>
+    <string name="connect_push_hint">หากต้องการส่งเพลงไปยังอุปกรณ์ที่ปิดแอปอยู่ ให้ติดตั้ง ntfy บนเครื่องนั้นและตั้งเซิร์ฟเวอร์เริ่มต้นของ ntfy เป็น %1$s</string>
 </resources>

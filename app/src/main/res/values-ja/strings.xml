@@ -1304,4 +1304,8 @@
     <string name="connect_setting">自分のデバイスに接続</string>
     <string name="connect_setting_subtitle">サインインしているデバイス同士が互いを見つけます。別のデバイスから操作したり、音楽をデバイス間で移動したりできます。</string>
     <string name="connect_needs_gateway">Connect を使うには、設定でアカウントにサインインしてください。</string>
+    <string name="connect_asleep">スリープ中 · タップしてここで再生</string>
+    <string name="connect_cant_wake">スリープ中 · その端末で BitChord を開いてください</string>
+    <string name="connect_waking">%1$s を起動しています…</string>
+    <string name="connect_push_hint">アプリが閉じている端末に音楽を送るには、その端末に ntfy をインストールし、ntfy の既定のサーバーを %1$s に設定してください。</string>
 </resources>

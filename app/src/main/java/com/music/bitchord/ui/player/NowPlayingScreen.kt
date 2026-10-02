@@ -642,7 +642,9 @@ fun NowPlayingScreen(
     // [ConnectDevicesSheet], whose last row is this phone's outputs.
     val openOutputOrDevices: () -> Unit = {
         val party = ListenTogether.state.value
-        if (party.isConnect && party.members.any { it.connected && it.memberId != party.you?.memberId }) {
+        val others = party.members.any { it.connected && it.memberId != party.you?.memberId } ||
+            party.devices.any { it.deviceKey != party.you?.deviceKey || it.app != party.you?.app }
+        if (party.isConnect && others) {
             showConnectDevices = true
         } else {
             openAudioOutput()

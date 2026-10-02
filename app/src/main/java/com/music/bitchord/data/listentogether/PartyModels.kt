@@ -142,6 +142,8 @@ data class PartySnapshot(
     val code: String = "",
     /** [KIND_JAM], joined with a code, or [KIND_CONNECT], this account's own devices. */
     val kind: String = KIND_JAM,
+    /** Connect only: every device this account has, asleep ones included. */
+    val devices: List<ConnectDevice> = emptyList(),
     val createdAtMs: Long = 0,
     val maxMembers: Int = 5,
     /**
@@ -227,6 +229,24 @@ internal data class ConnectRequest(
     val deviceName: String,
     val displayName: String,
     val avatarUrl: String? = null,
+    /** This device's UnifiedPush endpoint, so a sleeping device can be woken. */
+    val pushEndpoint: String? = null,
+)
+
+/**
+ * One of this account's devices as the server remembers it, connected or not.
+ * The ones that are not are what the devices sheet offers to wake.
+ */
+@Serializable
+data class ConnectDevice(
+    val deviceId: String = "",
+    val deviceKey: String = "",
+    val app: String = "",
+    val deviceName: String = "",
+    /** Gave a push endpoint, so it can be woken from another device. */
+    val wakeable: Boolean = false,
+    val connected: Boolean = false,
+    val lastSeenMs: Long = 0,
 )
 
 @Serializable

@@ -254,6 +254,18 @@
           Downloads. Not exported: it is started by the app and by its own
           cancel action, and nothing outside has any business queueing work.
         -->
+        <!--
+          Connect: receives the push that wakes this device when another of the
+          account's devices asks to play here. See ConnectPushService.
+        -->
+        <service
+            android:name=".playback.ConnectPushService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="org.unifiedpush.android.connector.PUSH_EVENT" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".download.DownloadService"
             android:exported="false"

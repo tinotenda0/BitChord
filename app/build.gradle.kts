@@ -287,6 +287,8 @@ dependencies {
     // ---- Media playback: Media3 / ExoPlayer ----
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-session:1.11.0")
+    // ---- Connect: waking a sleeping device (UnifiedPush, delivered by ntfy) ----
+    implementation("org.unifiedpush.android:connector:3.3.5")
     implementation("androidx.media3:media3-common:1.11.0")
     implementation("androidx.media3:media3-datasource-okhttp:1.11.0")
     // Audio is progressive, but Apple serves its motion artwork as HLS — this

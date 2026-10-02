@@ -1349,4 +1349,8 @@
     <string name="connect_setting">Подключаться к моим устройствам</string>
     <string name="connect_setting_subtitle">Ваши устройства с выполненным входом находят друг друга: управляйте одним с другого или переносите музыку между ними.</string>
     <string name="connect_needs_gateway">Войдите в свой аккаунт в настройках, чтобы использовать Connect.</string>
+    <string name="connect_asleep">Спит · нажмите, чтобы играть здесь</string>
+    <string name="connect_cant_wake">Спит · откройте на нём BitChord</string>
+    <string name="connect_waking">Пробуждаем %1$s…</string>
+    <string name="connect_push_hint">Чтобы отправлять музыку на устройство с закрытым приложением, установите на него ntfy и укажите сервер ntfy по умолчанию: %1$s.</string>
 </resources>
