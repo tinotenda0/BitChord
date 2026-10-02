@@ -1335,4 +1335,22 @@
 
 
 
+    <string name="listen_together_join_as_remote">Присоединиться как пульт</string>
+    <string name="listen_together_join_as_remote_footer">Управляйте музыкой хоста с этого телефона, не воспроизводя её здесь.</string>
+    <string name="listen_together_remote_badge">Пульт</string>
+    <string name="listen_together_you_are_remote">Вы — пульт. Музыка играет на устройстве хоста, а этот телефон только управляет ею.</string>
+    <string name="connect_devices_title">Устройства</string>
+    <string name="connect_playing_on">Играет на %1$s</string>
+    <string name="connect_this_phone">%1$s (этот телефон)</string>
+    <string name="connect_playing">Играет</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">Аудиовыход этого телефона</string>
+    <string name="connect_setting">Подключаться к моим устройствам</string>
+    <string name="connect_setting_subtitle">Ваши устройства с выполненным входом находят друг друга: управляйте одним с другого или переносите музыку между ними.</string>
+    <string name="connect_needs_gateway">Войдите в свой аккаунт в настройках, чтобы использовать Connect.</string>
+    <string name="connect_asleep">Спит · нажмите, чтобы играть здесь</string>
+    <string name="connect_cant_wake">Спит · откройте на нём BitChord</string>
+    <string name="connect_waking">Пробуждаем %1$s…</string>
+    <string name="connect_push_hint">Чтобы отправлять музыку на устройство с закрытым приложением, установите на него ntfy и укажите сервер ntfy по умолчанию: %1$s.</string>
 </resources>

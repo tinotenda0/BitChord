@@ -18,6 +18,13 @@ func getInt(key string, fallback int) int {
 	return parsed
 }
 
+func getString(key string, fallback string) string {
+	if val := strings.TrimSpace(os.Getenv(key)); val != "" {
+		return val
+	}
+	return fallback
+}
+
 func getCSV(key string, fallback string) []string {
 	val := os.Getenv(key)
 	if val == "" {
@@ -61,6 +68,38 @@ func IsAllowedOrigin(origin string) bool {
 
 var (
 	MaxMembers           = getInt("JAM_MAX_MEMBERS", 5)
+	// Remotes play nothing, so they are counted apart from MaxMembers: a full
+	// party can still be driven from another phone.
+	MaxRemotes           = getInt("JAM_MAX_REMOTES", 5)
+	// How far the clock device's measured playhead may stray from the party
+	// before the party is re-anchored onto it. See Party.ClockMember.
+	ReanchorThresholdMs  = int64(getInt("JAM_REANCHOR_THRESHOLD_MS", 1000))
+	// The least time between two re-anchors of one party, so a device that is
+	// stalling repeatedly cannot drag everybody else along at every report.
+	ReanchorCooldownMs   = int64(getInt("JAM_REANCHOR_COOLDOWN_MS", 3000))
+
+	// Connect: an account's own devices, in one code-less party. Off unless a
+	// gateway is configured to check logins against.
+	GatewayURL           = getString("JAM_GATEWAY_URL", "")
+	ConnectMaxDevices    = getInt("JAM_CONNECT_MAX_DEVICES", 10)
+	// How long an account's party outlives its last connected device.
+	ConnectIdleTTLMs     = int64(getInt("JAM_CONNECT_IDLE_TTL_MS", 6*60*60*1000))
+	// How long the output may sit paused before a device that opens takes
+	// playback over, instead of joining as a remote for a speaker nobody is using.
+	ConnectHandoverMs    = int64(getInt("JAM_CONNECT_HANDOVER_MS", 5*60*1000))
+	// How far ahead a transferred song restarts, for the new device to load it.
+	TransferLeadMs       = int64(getInt("JAM_TRANSFER_LEAD_MS", 1500))
+	ConnectRatePerMinute = getInt("JAM_CONNECT_RATE_PER_MINUTE", 30)
+	// Where the account device list is saved; empty keeps it in memory only.
+	DataDir              = getString("JAM_DATA_DIR", "")
+	// The only hosts a wake-up push may be sent to. A device's push endpoint is
+	// a URL it chose, so without this list "wake my laptop" would let anyone
+	// make this server POST anywhere.
+	PushHosts            = getCSV("JAM_PUSH_HOSTS", "")
+	// A device not seen for this long drops off the list.
+	DeviceForgetMs       = int64(getInt("JAM_DEVICE_FORGET_DAYS", 60)) * 24 * 60 * 60 * 1000
+	// How long a woken device has to arrive and still be handed playback.
+	WakeWindowMs         = int64(getInt("JAM_WAKE_WINDOW_MS", 90000))
 	StateHeartbeatMs     = getInt("JAM_STATE_HEARTBEAT_MS", 5000)
 	PlayLeadMs           = getInt("JAM_PLAY_LEAD_MS", 350)
 	DisconnectGraceMs    = int64(getInt("JAM_DISCONNECT_GRACE_MS", 45000))

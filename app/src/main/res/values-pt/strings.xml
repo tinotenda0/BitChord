@@ -1314,4 +1314,22 @@
 
 
 
+    <string name="listen_together_join_as_remote">Entrar como controle remoto</string>
+    <string name="listen_together_join_as_remote_footer">Controle a música do anfitrião deste telefone sem tocá-la aqui.</string>
+    <string name="listen_together_remote_badge">Controle remoto</string>
+    <string name="listen_together_you_are_remote">Você é um controle remoto. A música toca no dispositivo do anfitrião e este telefone só a controla.</string>
+    <string name="connect_devices_title">Dispositivos</string>
+    <string name="connect_playing_on">Tocando em %1$s</string>
+    <string name="connect_this_phone">%1$s (este telefone)</string>
+    <string name="connect_playing">Tocando</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">Saída de áudio deste telefone</string>
+    <string name="connect_setting">Conectar aos meus dispositivos</string>
+    <string name="connect_setting_subtitle">Seus dispositivos conectados se encontram: controle um a partir de outro ou mova a música entre eles.</string>
+    <string name="connect_needs_gateway">Entre na sua conta em Configurações para usar o Connect.</string>
+    <string name="connect_asleep">Em repouso · toque para tocar aqui</string>
+    <string name="connect_cant_wake">Em repouso · abra o BitChord nele</string>
+    <string name="connect_waking">Acordando %1$s…</string>
+    <string name="connect_push_hint">Para enviar música a um dispositivo com o app fechado, instale o ntfy nele e defina o servidor padrão do ntfy como %1$s.</string>
 </resources>

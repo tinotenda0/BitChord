@@ -79,7 +79,7 @@ class TrackAnalyzer(private val context: Context, private val cache: AudioCache)
      * flight, rather than latched when the party starts, so joining one stops
      * the work already running instead of only the work not yet queued.
      */
-    private val stopped: Boolean get() = ListenTogether.state.value.inParty
+    private val stopped: Boolean get() = ListenTogether.state.value.inJam
 
     /**
      * Resolved on first use, not at construction, for the reason [AnalysisStore]

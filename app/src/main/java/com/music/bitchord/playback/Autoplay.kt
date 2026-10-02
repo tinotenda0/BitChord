@@ -48,6 +48,9 @@ fun autoplayEnabledFor(party: ListenTogether.State, localPreference: Boolean): B
  */
 fun autoplaySupplierId(party: ListenTogether.State): String? {
     if (!party.inParty) return null
+    // Connect has one device playing and the rest are remotes with nothing on
+    // their players to extend, so only the output ever tops the queue up.
+    if (party.isConnect) return party.output?.takeIf { it.connected }?.memberId
     val host = party.members.firstOrNull { it.isHost && it.connected }?.memberId
     if (party.hostOnlyControl) return host
     return host ?: party.members.asSequence()

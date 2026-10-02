@@ -130,6 +130,7 @@ private fun MemberDrawerRow(member: PartyMember, isYou: Boolean) {
                 isYou -> stringResource(R.string.listen_together_you)
                 !member.connected -> stringResource(R.string.listen_together_away)
                 member.isHost -> stringResource(R.string.listen_together_host)
+                member.isRemote -> stringResource(R.string.listen_together_remote_badge)
                 else -> null
             }
             if (subtitle != null) {

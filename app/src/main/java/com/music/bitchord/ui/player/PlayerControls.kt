@@ -981,7 +981,19 @@ internal fun OutputCaption(
     val captionModifier = Modifier
         .fillMaxWidth(0.65f)
         .clickable { if (badge.inParty) onOpenMembers() else onOpenOutput() }
-    if (!badge.inParty && isHiResOutput) {
+    if (badge.playingOn != null) {
+        // A remote's speaker is somewhere else, so this phone's route and its
+        // shine say nothing about what anybody is hearing.
+        Text(
+            text = stringResource(R.string.connect_playing_on, badge.playingOn),
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp, fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center,
+            modifier = captionModifier,
+        )
+    } else if (!badge.inParty && isHiResOutput) {
         ShimmerText(
             text = outputName,
             style = MaterialTheme.typography.labelSmall.copy(
@@ -1006,13 +1018,17 @@ internal fun OutputCaption(
 
 /** The three fields of a party the player draws — see [OutputPartyPill]. */
 private data class PartyBadge(
+    /** In a jam. Connect is drawn as where the music is playing, not as a party. */
     val inParty: Boolean,
     val members: Int,
     val hostFirstName: String?,
+    /** Connect, as a remote: the device the music is coming out of. */
+    val playingOn: String? = null,
 )
 
 private fun ListenTogether.State.badge(): PartyBadge = PartyBadge(
-    inParty = inParty,
+    playingOn = output?.takeIf { isRemote }?.let { it.deviceName.ifBlank { it.displayName } },
+    inParty = inJam,
     members = members.size,
     hostFirstName = members.firstOrNull(PartyMember::isHost)
         ?.displayName

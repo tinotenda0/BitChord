@@ -515,7 +515,9 @@ class CrossfadeController(
         // but a request made a tick before the party started would otherwise
         // run to completion: a whole-track decode and two model passes, spent
         // on a transition that cannot happen.
-        if (ListenTogether.state.value.inParty) {
+        // A jam, that is: Connect has one speaker, which is the clock, and its
+        // transitions are its own to mix like any other device's.
+        if (ListenTogether.state.value.inJam) {
             // Left behind by the last pair planned before the party started.
             // The marker describes a transition that is no longer going to
             // happen, and the flag a mix that is no longer running; both would

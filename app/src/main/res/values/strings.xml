@@ -951,6 +951,20 @@
     <string name="listen_together_activity_updated">Updated the party</string>
     <string name="listen_together_join">Join a party</string>
     <string name="listen_together_join_action">Join</string>
+    <string name="listen_together_join_as_remote">Join as a remote</string>
+    <string name="listen_together_join_as_remote_footer">Control the host’s music from this phone without playing it here.</string>
+    <string name="listen_together_remote_badge">Remote</string>
+    <string name="connect_devices_title">Devices</string>
+    <string name="connect_playing_on">Playing on %1$s</string>
+    <string name="connect_this_phone">%1$s (this phone)</string>
+    <string name="connect_playing">Playing</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">This phone’s audio output</string>
+    <string name="connect_setting">Connect to my devices</string>
+    <string name="connect_setting_subtitle">Your signed-in devices find each other: control one from another, or move the music between them.</string>
+    <string name="connect_needs_gateway">Sign in to your account in Settings to use Connect.</string>
+    <string name="listen_together_you_are_remote">You’re a remote. The music plays on the host’s device, and this phone only controls it.</string>
     <string name="listen_together_code_hint">Six letters or digits</string>
     <string name="listen_together_code">Party code</string>
     <string name="listen_together_code_footer">Read it out or send it. O and I aren’t used, so an “oh” is always a zero.</string>
@@ -1144,4 +1158,8 @@
 
     <string name="card_songs_format">%1$s songs</string>
 
+    <string name="connect_asleep">Asleep · tap to play here</string>
+    <string name="connect_cant_wake">Asleep · open BitChord on it to use</string>
+    <string name="connect_waking">Waking %1$s…</string>
+    <string name="connect_push_hint">To send music to a device whose app is closed, install ntfy on it and set ntfy’s default server to %1$s.</string>
 </resources>

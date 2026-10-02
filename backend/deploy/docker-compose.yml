@@ -1,0 +1,38 @@
+# Runs the party server behind a reverse proxy or tunnel on the same host
+# (bound to loopback only; the proxy is what faces the internet).
+#
+#   docker compose -f deploy/docker-compose.yml up -d --build
+services:
+  bitchord-jam:
+    build: ..
+    container_name: bitchord-jam
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8030:8000"
+    environment:
+      PORT: "8000"
+      # The proxy sets X-Forwarded-For; without this every client shares one
+      # create-rate bucket.
+      JAM_TRUST_PROXY: "true"
+      JAM_MAX_MEMBERS: "5"
+      JAM_MAX_REMOTES: "5"
+      JAM_MAX_PARTIES: "50"
+      JAM_CREATE_RATE_PER_MINUTE: "4"
+      # How long a dropped device keeps its place. Long enough for a tunnel or
+      # a dead spot on a drive, which 45 seconds was not.
+      JAM_DISCONNECT_GRACE_MS: "180000"
+      # Connect checks logins against the family gateway. Its public address,
+      # because the host's firewall does not let a container reach it locally.
+      JAM_GATEWAY_URL: "https://api.tinotenda.co"
+      # Waking a sleeping device: where its device list is kept, and the only
+      # push server a wake-up may be sent to.
+      JAM_DATA_DIR: "/data"
+      JAM_PUSH_HOSTS: "ntfy.tinotenda.co"
+    volumes:
+      - jam-data:/data
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  jam-data:

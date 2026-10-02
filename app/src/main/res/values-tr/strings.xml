@@ -1264,4 +1264,22 @@
 
 
 
+    <string name="listen_together_join_as_remote">Kumanda olarak katıl</string>
+    <string name="listen_together_join_as_remote_footer">Ev sahibinin müziğini burada çalmadan bu telefondan kontrol et.</string>
+    <string name="listen_together_remote_badge">Kumanda</string>
+    <string name="listen_together_you_are_remote">Bir kumandasın. Müzik ev sahibinin cihazında çalıyor, bu telefon yalnızca onu kontrol ediyor.</string>
+    <string name="connect_devices_title">Cihazlar</string>
+    <string name="connect_playing_on">%1$s üzerinde çalıyor</string>
+    <string name="connect_this_phone">%1$s (bu telefon)</string>
+    <string name="connect_playing">Çalıyor</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">Bu telefonun ses çıkışı</string>
+    <string name="connect_setting">Cihazlarıma bağlan</string>
+    <string name="connect_setting_subtitle">Oturum açmış cihazların birbirini bulur: birini diğerinden kontrol et ya da müziği aralarında taşı.</string>
+    <string name="connect_needs_gateway">Connect’i kullanmak için Ayarlar’dan hesabına giriş yap.</string>
+    <string name="connect_asleep">Uykuda · burada çalmak için dokun</string>
+    <string name="connect_cant_wake">Uykuda · üzerinde BitChord’u aç</string>
+    <string name="connect_waking">%1$s uyandırılıyor…</string>
+    <string name="connect_push_hint">Uygulaması kapalı bir cihaza müzik göndermek için o cihaza ntfy kur ve ntfy’nin varsayılan sunucusunu %1$s yap.</string>
 </resources>

@@ -166,6 +166,10 @@ object ListenTogether {
 
     data class State(
         val code: String? = null,
+        /** [KIND_JAM] or [KIND_CONNECT]. See [isConnect]. */
+        val kind: String = KIND_JAM,
+        /** Connect only: this account's devices, including the ones asleep. */
+        val devices: List<ConnectDevice> = emptyList(),
         val you: PartyMember? = null,
         val members: List<PartyMember> = emptyList(),
         val maxMembers: Int = 5,
@@ -202,6 +206,48 @@ object ListenTogether {
          */
         val controlsLocked: Boolean
             get() = inParty && hostOnlyControl && you?.isHost != true
+
+        /**
+         * This device drives the party without playing it, like a phone
+         * controlling somebody else's speaker. Its player is left alone and the
+         * playback service shows the party through `PartyRemotePlayer` instead.
+         */
+        val isRemote: Boolean
+            get() = inParty && you?.isRemote == true
+
+        /**
+         * This device's real playhead is the one the party follows. It reports
+         * what it is actually playing and does not chase the party itself; see
+         * [PartyPlayback.clockMemberId].
+         */
+        val isClock: Boolean
+            get() = inParty && you != null && playback.clockMemberId == you.memberId
+
+        /**
+         * In this account's Connect party: its own devices, joined without a
+         * code, with one of them playing. Most of the time a signed-in device is
+         * in one, so this is the default state, and nearly every rule written
+         * for a jam (several speakers kept in step, a queue that belongs to
+         * everybody) does not apply to it. See [inJam].
+         */
+        val isConnect: Boolean
+            get() = inParty && kind == KIND_CONNECT
+
+        /** In a jam: a party joined with a code, shared with other people. */
+        val inJam: Boolean
+            get() = inParty && kind != KIND_CONNECT
+
+        /**
+         * Whether the queue on this device's own player is this user's own
+         * music: outside a party, or as the device playing Connect. Not in a jam,
+         * where it is everybody's, nor as a remote, whose player plays nothing.
+         */
+        val ownsQueue: Boolean
+            get() = !inParty || (isConnect && !isRemote)
+
+        /** The Connect device playing right now, or null. */
+        val output: PartyMember?
+            get() = if (isConnect) members.firstOrNull { it.isHost && !it.isRemote } else null
     }
 
     /** A refusal from the server, carrying the machine-readable half. */
@@ -630,10 +676,16 @@ object ListenTogether {
             defaultServer
         }
 
+        appContext = context.applicationContext
+        _connectEnabled.value = prefs.getBoolean(KEY_CONNECT, true)
+        _pushEndpoint.value = prefs.getString(KEY_PUSH_ENDPOINT, null)
         val code = prefs.getString(KEY_CODE, null)
         val saved = prefs.getString(KEY_TOKEN, null)
         prefs.edit().remove(KEY_CODE).remove(KEY_TOKEN).apply()
-        if (!code.isNullOrBlank() && !saved.isNullOrBlank()) {
+        // Not for an account's Connect party. Leaving it would hand playback to
+        // another device and pause it, every time this process started; the
+        // device comes back into it in a moment as the same member anyway.
+        if (!code.isNullOrBlank() && !saved.isNullOrBlank() && !code.startsWith("~")) {
             releaseStaleSlot(code, saved)
         }
 
@@ -728,9 +780,237 @@ object ListenTogether {
         connect()
     }
 
+    // ------------------------------------------------------------ Connect --
+
+    /** Lets go of a membership the server has already forgotten, without telling it. */
+    private fun forgetMembership(error: String? = null) {
+        token = null
+        activePartyServerBase = null
+        prefs.edit().remove(KEY_CODE).remove(KEY_TOKEN).apply()
+        clock.reset()
+        _state.value = State(error = error)
+    }
+
+    private enum class MembershipProbe { ALIVE, TOKEN_GONE, PARTY_GONE, UNKNOWN }
+
+    /** Whether this device's membership still exists, asked over plain HTTP. */
+    private suspend fun probeMembership(code: String, held: String): MembershipProbe {
+        val base = activePartyServerBase ?: resolveHttpBase(effectiveIdleServerBase())
+        if (base.isBlank()) return MembershipProbe.UNKNOWN
+        return runCatching {
+            val status = http.get("$base/api/parties/$code") {
+                header("Authorization", "Bearer $held")
+            }.status.value
+            when (status) {
+                200 -> MembershipProbe.ALIVE
+                401 -> MembershipProbe.TOKEN_GONE
+                404 -> MembershipProbe.PARTY_GONE
+                else -> MembershipProbe.UNKNOWN
+            }
+        }.getOrDefault(MembershipProbe.UNKNOWN)
+    }
+
+    /**
+     * The server has let this membership go while this device was away.
+     *
+     * Connect signs straight back in as the same device ([ensureHome]). A jam
+     * whose party is still there is rejoined with the same code and role, so a
+     * drive through a tunnel does not end it for this phone; one whose party has
+     * ended is left, saying so.
+     */
+    private fun onMembershipLost(partyGone: Boolean) {
+        val state = _state.value
+        session = null
+        if (state.isConnect) {
+            Log.i(TAG, "connect membership gone; signing in again")
+            forgetMembership()
+            homeRetryAtMs = 0L
+            homeFailures = 0
+            return
+        }
+        val code = state.code
+        val asRemote = state.isRemote
+        val base = activePartyServerBase
+        if (partyGone || code == null || base == null) {
+            Log.i(TAG, "jam ended while away")
+            forgetMembership(error = "That party has ended.")
+            return
+        }
+        Log.i(TAG, "jam membership expired while away; rejoining")
+        scope.launch {
+            val rejoined = runCatching {
+                switchMutex.withLock { doJoinOnServer(base, code, nickname(), asRemote) }
+            }
+            rejoined.onFailure { failure ->
+                Log.w(TAG, "could not rejoin the jam: ${redact(failure.message)}")
+                forgetMembership(error = failure.displayMessage())
+            }
+        }
+    }
+
+    /**
+     * Whether this device has music coming out of it, for a Connect sign-in to
+     * say so: a device that lost its membership mid-song comes back as the one
+     * playing rather than being silenced. Kept by `PartySync` from the
+     * player's own callback, since the player may only be read on its thread.
+     */
+    @Volatile
+    var localPlaybackActive: Boolean = false
+
+    private lateinit var appContext: Context
+
+    private val _connectEnabled = MutableStateFlow(true)
+
+    /**
+     * Whether this device sits in its account's Connect party whenever it is
+     * not in a jam. On by default: that is what makes the account's devices
+     * find each other without anybody doing anything.
+     */
+    val connectEnabled: StateFlow<Boolean> = _connectEnabled.asStateFlow()
+
+    private var homeJob: Job? = null
+    private var homeRetryAtMs = 0L
+    private var homeFailures = 0
+
+    private val _pushEndpoint = MutableStateFlow<String?>(null)
+
+    /** This device's UnifiedPush endpoint, or null when it cannot be woken. */
+    val pushEndpoint: StateFlow<String?> = _pushEndpoint.asStateFlow()
+
+    /**
+     * A new (or withdrawn) push endpoint from the distributor. The server only
+     * learns endpoints at sign-in, so a change while in Connect signs in again,
+     * as the same device, to hand it over.
+     */
+    fun setPushEndpoint(endpoint: String?) {
+        if (endpoint == _pushEndpoint.value) return
+        _pushEndpoint.value = endpoint
+        prefs.edit().apply {
+            if (endpoint == null) remove(KEY_PUSH_ENDPOINT) else putString(KEY_PUSH_ENDPOINT, endpoint)
+        }.apply()
+        if (endpoint != null && _state.value.isConnect) {
+            scope.launch {
+                runCatching {
+                    switchMutex.withLock {
+                        if (_state.value.isConnect) connectHome(activePartyServerBase ?: resolveHttpBase(effectiveIdleServerBase()))
+                    }
+                }.onFailure { Log.i(TAG, "could not hand the new push endpoint over: ${redact(it.message)}") }
+            }
+        }
+    }
+
+    /**
+     * Woken by a push: another of this account's devices wants to play here.
+     * Signs in now, past any backoff, since the server is holding playback for
+     * this device and only for a minute or so.
+     */
+    fun wakeForTakeover() {
+        homeRetryAtMs = 0L
+        homeFailures = 0
+        ensureHome()
+    }
+
+    fun setConnectEnabled(enabled: Boolean) {
+        _connectEnabled.value = enabled
+        prefs.edit().putBoolean(KEY_CONNECT, enabled).apply()
+        homeRetryAtMs = 0L
+        homeFailures = 0
+        if (!enabled && _state.value.isConnect) {
+            scope.launch { leaveParty() }
+        }
+    }
+
+    /**
+     * Puts this device in its account's Connect party, if it should be in one
+     * and is not in anything yet. Called on every tick of the playback service,
+     * so it is cheap when there is nothing to do and backs off when the server
+     * will not have it, rather than asking every 700ms.
+     */
+    fun ensureHome() {
+        if (_state.value.inParty || !_connectEnabled.value) return
+        if (!com.music.bitchord.gateway.Gateway.signedIn || !this::appContext.isInitialized) return
+        if (homeJob?.isActive == true) return
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now < homeRetryAtMs) return
+        homeJob = scope.launch {
+            val result = runCatching {
+                switchMutex.withLock {
+                    // Something else (a jam) got in while this waited.
+                    if (!_state.value.inParty) connectHome(resolveHttpBase(effectiveIdleServerBase()))
+                }
+            }
+            result.onSuccess {
+                homeFailures = 0
+                homeRetryAtMs = 0L
+            }.onFailure { failure ->
+                homeFailures++
+                val code = (failure as? PartyException)?.code
+                val wait = when (code) {
+                    // Not a blip: this server has no Connect, or the login is
+                    // wrong. Ask again only now and then.
+                    "connect_disabled", "bad_login", "http_404" -> 30 * 60_000L
+                    else -> minOf(5 * 60_000L, 15_000L shl minOf(homeFailures - 1, 5))
+                }
+                homeRetryAtMs = android.os.SystemClock.elapsedRealtime() + wait
+                Log.i(TAG, "connect not joined ($code), retrying in ${wait / 1000}s: ${redact(failure.message)}")
+            }
+        }
+    }
+
+    private suspend fun connectHome(serverBase: String) {
+        if (serverBase.isBlank()) throw PartyException("no_server", "No party server set.")
+        val (user, gatewayToken, salt) = com.music.bitchord.gateway.Gateway.tokenLogin()
+            ?: throw PartyException("not_signed_in", "Sign in to the gateway to use Connect.")
+        val who = identity()
+        val response = http.post("$serverBase/api/connect") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                ConnectRequest(
+                    gatewayUser = user,
+                    gatewayToken = gatewayToken,
+                    gatewaySalt = salt,
+                    deviceKey = DeviceIdentity.key(appContext),
+                    app = DeviceIdentity.app,
+                    deviceName = DeviceIdentity.name(appContext),
+                    displayName = who?.name ?: user,
+                    avatarUrl = who?.avatar,
+                    pushEndpoint = _pushEndpoint.value,
+                    playing = localPlaybackActive,
+                ),
+            )
+        }
+        if (!response.status.isSuccess()) throw response.toPartyException()
+        val membership: PartyMembership = response.body()
+
+        withContext(NonCancellable) {
+            activePartyServerBase = serverBase
+            token = membership.token
+            prefs.edit()
+                .putString(KEY_CODE, membership.code)
+                .putString(KEY_TOKEN, membership.token)
+                .apply()
+            clock.reset()
+            _state.value = State(
+                code = membership.code,
+                kind = membership.party.kind,
+                devices = membership.party.devices,
+                you = membership.you,
+                members = membership.party.members,
+                maxMembers = membership.party.maxMembers,
+                playback = membership.party.playback,
+                queue = membership.party.queue,
+                connection = Connection.CONNECTING,
+            )
+        }
+        connect()
+    }
+
     // ------------------------------------------------------------ joining --
 
     suspend fun createParty(nickname: String = nickname(), maxMembers: Int = 5): Result<String> = switchMutex.withLock {
+        // Starting a jam takes this device out of Connect for its duration;
+        // leaving the jam brings it back. See [ensureHome].
+        if (_state.value.isConnect) leaveLocked()
         val primary = effectiveIdleServerBase()
         val primaryNormalized = resolveHttpBase(primary)
         val attempt = runCatching {
@@ -782,6 +1062,7 @@ object ListenTogether {
             clock.reset()
             _state.value = State(
                 code = membership.code,
+                kind = membership.party.kind,
                 you = membership.you,
                 members = membership.party.members,
                 maxMembers = membership.party.maxMembers,
@@ -806,17 +1087,22 @@ object ListenTogether {
      * require target-first transactional semantics and recovery guarantees
      * that are intentionally not part of this API.
      */
-    suspend fun joinParty(code: String, nickname: String = nickname()): Result<String> = switchMutex.withLock {
+    suspend fun joinParty(
+        code: String,
+        nickname: String = nickname(),
+        asRemote: Boolean = false,
+    ): Result<String> = switchMutex.withLock {
         val targetServer = resolveHttpBase(effectiveIdleServerBase())
+        if (_state.value.isConnect) leaveLocked()
         runCatching {
-            doJoinOnServer(targetServer, code, nickname)
+            doJoinOnServer(targetServer, code, nickname, asRemote)
         }.onFailure { failure ->
             Log.w(TAG, "could not enter a party: ${redact(failure.message)}")
             _state.update { it.copy(error = failure.displayMessage()) }
         }
     }
 
-    private suspend fun doJoinOnServer(serverBase: String, code: String, nickname: String): String {
+    private suspend fun doJoinOnServer(serverBase: String, code: String, nickname: String, asRemote: Boolean): String {
         val who = identity(nickname) ?: throw PartyException("not_signed_in", "Sign in to listen together.")
         if (serverBase.isBlank()) throw PartyException("no_server", "Set the party server address first.")
         val cleaned = code.filter { it.isLetterOrDigit() }.uppercase()
@@ -826,7 +1112,10 @@ object ListenTogether {
         refuseIfRecentlyKicked(cleaned)
         val membership = post(
             "$serverBase/api/parties/$cleaned/join",
-            JoinRequest(who.userId, who.deviceId, who.name, who.avatar),
+            JoinRequest(
+                who.userId, who.deviceId, who.name, who.avatar,
+                role = if (asRemote) PartyMember.ROLE_REMOTE else null,
+            ),
         )
 
         withContext(NonCancellable) {
@@ -839,6 +1128,7 @@ object ListenTogether {
             clock.reset()
             _state.value = State(
                 code = membership.code,
+                kind = membership.party.kind,
                 you = membership.you,
                 members = membership.party.members,
                 maxMembers = membership.party.maxMembers,
@@ -879,6 +1169,7 @@ object ListenTogether {
         targetCustomServer: String,
         targetCode: String,
         nickname: String = nickname(),
+        asRemote: Boolean = false,
     ): SwitchPartyResult = switchMutex.withLock {
         withContext(Dispatchers.IO) {
             val who = identity(nickname)
@@ -932,7 +1223,10 @@ object ListenTogether {
             val targetJoinResult = runCatching {
                 post(
                     "$targetBase/api/parties/$cleanedTargetCode/join",
-                    JoinRequest(who.userId, who.deviceId, who.name, who.avatar),
+                    JoinRequest(
+                        who.userId, who.deviceId, who.name, who.avatar,
+                        role = if (asRemote) PartyMember.ROLE_REMOTE else null,
+                    ),
                 )
             }
 
@@ -975,6 +1269,7 @@ object ListenTogether {
                 clock.reset()
                 _state.value = State(
                     code = membership.code,
+                    kind = membership.party.kind,
                     you = membership.you,
                     members = membership.party.members,
                     maxMembers = membership.party.maxMembers,
@@ -992,7 +1287,9 @@ object ListenTogether {
     }
 
     /** Give up this device's slot. The party carries on without it. */
-    suspend fun leaveParty() = switchMutex.withLock {
+    suspend fun leaveParty() = switchMutex.withLock { leaveLocked() }
+
+    private suspend fun leaveLocked() {
         withContext(Dispatchers.IO) {
             val code = _state.value.code
             val held = token
@@ -1060,6 +1357,15 @@ object ListenTogether {
     fun setMaxMembers(value: Int) = control("setMaxMembers") { put("maxMembers", value) }
 
     fun kick(memberId: String) = control("kick") { put("memberId", memberId) }
+
+    /** Connect only: move playback to another of this account's devices. */
+    fun transfer(memberId: String) = control("transfer") { put("memberId", memberId) }
+
+    /**
+     * Connect only: move playback to a device that is asleep. The server pushes
+     * to it, and hands it playback when it signs in.
+     */
+    fun wake(deviceId: String) = control("wake") { put("deviceId", deviceId) }
 
     fun setAutoplay(enabled: Boolean) = control("setAutoplay") { put("enabled", enabled) }
 
@@ -1172,7 +1478,11 @@ object ListenTogether {
                 ) {
                     session = this
                     backoffMs = 1_000L
-                    _state.update { it.copy(connection = Connection.LIVE, error = null) }
+                    // Not LIVE yet. Until the welcome lands, everything held here
+                    // is what was true before the gap, and the player layer
+                    // treats LIVE as permission to act on it. See [State] and the
+                    // welcome branch of [onFrame], which is what sets it.
+                    _state.update { it.copy(error = null) }
                     launch { pingLoop() }
                     launch { reportLoop() }
                     for (frame in incoming) {
@@ -1187,6 +1497,22 @@ object ListenTogether {
                 session = null
             }
             if (!currentScopeActive()) return
+            // A socket that cannot be opened is either the network or a
+            // membership the server no longer has: one swept after its grace, or
+            // every one at once when the server restarts. Retrying the second
+            // kind is refused for ever, which is how a remote ended up on a
+            // spinner for good. So ask, with a plain request that answers clearly.
+            when (probeMembership(code, held)) {
+                MembershipProbe.ALIVE, MembershipProbe.UNKNOWN -> Unit
+                MembershipProbe.TOKEN_GONE -> {
+                    onMembershipLost(partyGone = false)
+                    return
+                }
+                MembershipProbe.PARTY_GONE -> {
+                    onMembershipLost(partyGone = true)
+                    return
+                }
+            }
             _state.update { it.copy(connection = Connection.CONNECTING) }
             // The clock is not carried across a gap. Whatever the offset was
             // before the socket died, the only honest thing to say afterwards is
@@ -1241,6 +1567,9 @@ object ListenTogether {
     private suspend fun DefaultClientWebSocketSession.reportLoop() {
         while (true) {
             delay(REPORT_INTERVAL_MS)
+            // The clock sends its real playhead through [reportMeasured]
+            // instead, and a remote has no playhead to speak of.
+            if (_state.value.isClock || _state.value.isRemote) continue
             val position = partyPositionMs() ?: continue
             val frame = buildJsonObject {
                 put("type", "report")
@@ -1249,6 +1578,28 @@ object ListenTogether {
             }
             runCatching { send(Frame.Text(frame.toString())) }
         }
+    }
+
+    /**
+     * Where this device's player really is, for the clock to report.
+     *
+     * Stamped with the server-clock instant it was read at, so the time the
+     * frame spends in flight does not count as drift. Sent only by the clock
+     * and only once the offset is measured: without one the stamp would be a
+     * guess, and the server would move the whole party onto it.
+     */
+    fun reportMeasured(videoId: String, positionMs: Long) {
+        val state = _state.value
+        if (!state.isClock || !state.clockSynced) return
+        val atMs = clock.serverNowMs() ?: return
+        send(buildJsonObject {
+            put("type", "report")
+            put("measured", true)
+            put("videoId", videoId)
+            put("positionMs", positionMs)
+            put("atMs", atMs)
+            put("isPlaying", true)
+        })
     }
 
     private fun onFrame(text: String) {
@@ -1264,6 +1615,8 @@ object ListenTogether {
                 }
                 _state.update { it.copy(
                     code = party.code,
+                    kind = party.kind,
+                    devices = party.devices,
                     you = you ?: it.you,
                     members = party.members,
                     maxMembers = party.maxMembers,
@@ -1345,6 +1698,16 @@ object ListenTogether {
                         you = current.you
                             ?.let { mine -> members.firstOrNull { it.memberId == mine.memberId } }
                             ?: current.you,
+                        devices = frame["devices"]
+                            ?.let {
+                                runCatching {
+                                    json.decodeFromJsonElement(
+                                        kotlinx.serialization.builtins.ListSerializer(ConnectDevice.serializer()),
+                                        it,
+                                    )
+                                }.getOrNull()
+                            }
+                            ?: current.devices,
                     )
                 }
             }
@@ -1652,6 +2015,8 @@ object ListenTogether {
     private const val KEY_DEVICE = "device_id"
     private const val KEY_NICKNAME = "party_nickname"
     private const val KEY_KICKED = "party_kicked_until"
+    private const val KEY_CONNECT = "connect_enabled"
+    private const val KEY_PUSH_ENDPOINT = "connect_push_endpoint"
 
     /** How long a removal keeps this device out of that party. */
     private const val KICK_BLOCK_MS = 24L * 60 * 60 * 1000

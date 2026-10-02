@@ -1229,4 +1229,22 @@
     <string name="prioritize_spotify_canvas">Ưu tiên Spotify Canvas</string>
     <string name="prioritize_spotify_canvas_subtitle">Thử Spotify trước Apple Music và các nhà cung cấp ảnh bìa động khác</string>
 
+    <string name="listen_together_join_as_remote">Tham gia làm điều khiển</string>
+    <string name="listen_together_join_as_remote_footer">Điều khiển nhạc của chủ phòng từ điện thoại này mà không phát ở đây.</string>
+    <string name="listen_together_remote_badge">Điều khiển</string>
+    <string name="listen_together_you_are_remote">Bạn là điều khiển. Nhạc phát trên thiết bị của chủ phòng, điện thoại này chỉ điều khiển.</string>
+    <string name="connect_devices_title">Thiết bị</string>
+    <string name="connect_playing_on">Đang phát trên %1$s</string>
+    <string name="connect_this_phone">%1$s (điện thoại này)</string>
+    <string name="connect_playing">Đang phát</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">Đầu ra âm thanh của điện thoại này</string>
+    <string name="connect_setting">Kết nối với thiết bị của tôi</string>
+    <string name="connect_setting_subtitle">Các thiết bị đã đăng nhập của bạn tự tìm thấy nhau: điều khiển thiết bị này từ thiết bị khác hoặc chuyển nhạc giữa chúng.</string>
+    <string name="connect_needs_gateway">Đăng nhập tài khoản trong Cài đặt để dùng Connect.</string>
+    <string name="connect_asleep">Đang ngủ · chạm để phát ở đây</string>
+    <string name="connect_cant_wake">Đang ngủ · hãy mở BitChord trên máy đó</string>
+    <string name="connect_waking">Đang đánh thức %1$s…</string>
+    <string name="connect_push_hint">Để gửi nhạc đến thiết bị đang đóng ứng dụng, hãy cài ntfy trên đó và đặt máy chủ mặc định của ntfy là %1$s.</string>
 </resources>

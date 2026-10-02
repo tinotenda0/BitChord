@@ -670,6 +670,12 @@ class PlaybackService : MediaLibraryService() {
      */
     private var partySync: PartySync? = null
 
+    /** The session's player for this device's own audio. @see attachLocalPlayer */
+    private var localSessionPlayer: Player? = null
+
+    /** Stands in for [localSessionPlayer] while this device is a party remote. */
+    private var remotePlayer: PartyRemotePlayer? = null
+
     /** Commands exposed as the secondary buttons on the media notification. */
     private val favoriteCommand = SessionCommand(ACTION_TOGGLE_FAVORITE, Bundle.EMPTY)
     private val autoplayCommand = SessionCommand(ACTION_TOGGLE_AUTOPLAY, Bundle.EMPTY)
@@ -1578,6 +1584,22 @@ class PlaybackService : MediaLibraryService() {
                 }
         }
         loadAutoplayForCurrentTrack()
+        // A Connect party starts with AutoPlay off, which this user never chose.
+        // The device that plays it brings its own preference in, once per
+        // arrival; after that the party's setting is the one every device
+        // toggles, as in a jam.
+        scope.launch {
+            ListenTogether.state
+                .map { if (it.isConnect && it.isClock) it.code + it.you?.memberId else null }
+                .distinctUntilChanged()
+                .collect { arrival ->
+                    if (arrival == null) return@collect
+                    val party = ListenTogether.state.value
+                    if (party.playback.autoplayEnabled != AppSettings.autoplay.value) {
+                        ListenTogether.setAutoplay(AppSettings.autoplay.value)
+                    }
+                }
+        }
 
         // Only the analytics listener reports the format the audio renderer was
         // configured with. Treated as a trigger rather than a source: the
@@ -1591,21 +1613,65 @@ class PlaybackService : MediaLibraryService() {
         crossfade = controller
         controller.start()
 
-        mediaSession = MediaLibrarySession.Builder(
-            this,
-            SessionPlayer(
-                exoPlayer,
-                controller,
-                onUserIntent = { partySync?.onLocalIntent() },
+        val sessionPlayer = SessionPlayer(
+            exoPlayer,
+            controller,
+            onUserIntent = { partySync?.onLocalIntent() },
             deferPlayToParty = { partySync?.shouldDeferPlay() == true },
             lockedTransport = { playing -> partySync?.onLockedTransport(playing) == true },
-            ) { lastPublishedSubtitle },
+        ) { lastPublishedSubtitle }
+        localSessionPlayer = sessionPlayer
+        mediaSession = MediaLibrarySession.Builder(
+            this,
+            sessionPlayer,
             MediaLibraryCallback(),
         )
             .setId(SESSION_ID)
             .setSessionActivity(sessionActivity())
             .build()
         refreshCustomLayouts()
+        followRemoteRole()
+    }
+
+    /**
+     * Puts a new player for this device's own audio in the session, unless the
+     * device is a party remote, in which case it is kept and attached when the
+     * device stops being one. The crossfade and quality swaps replace the local
+     * player mid-party, and must not knock the remote out of the session.
+     */
+    private fun attachLocalPlayer(sessionPlayer: Player) {
+        localSessionPlayer = sessionPlayer
+        if (remotePlayer == null) mediaSession?.player = sessionPlayer
+    }
+
+    /**
+     * Swaps the session over to [PartyRemotePlayer] while this device is a
+     * party remote, and back to its own player when it stops being one, by
+     * leaving, switching role or the party ending. Every surface that talks to
+     * the session (the app, the notification, a headset) follows without
+     * knowing anything changed.
+     */
+    private fun followRemoteRole() {
+        scope.launch {
+            ListenTogether.state
+                .map { it.isRemote }
+                .distinctUntilChanged()
+                .collect { remote ->
+                    val session = mediaSession ?: return@collect
+                    if (remote && remotePlayer == null) {
+                        player?.pause()
+                        val stand = PartyRemotePlayer(scope)
+                        remotePlayer = stand
+                        session.player = stand
+                    } else if (!remote) {
+                        val stand = remotePlayer ?: return@collect
+                        remotePlayer = null
+                        localSessionPlayer?.let { session.player = it }
+                        stand.release()
+                    }
+                    refreshCustomLayouts()
+                }
+        }
     }
 
     private fun createCrossfadeController() = CrossfadeController(
@@ -2148,13 +2214,13 @@ class PlaybackService : MediaLibraryService() {
         incoming.addListener(playbackListener)
         incoming.addAnalyticsListener(formatListener)
 
-        mediaSession?.player = SessionPlayer(
+        attachLocalPlayer(SessionPlayer(
             incoming,
             requireNotNull(crossfade),
             onUserIntent = { partySync?.onLocalIntent() },
             deferPlayToParty = { partySync?.shouldDeferPlay() == true },
             lockedTransport = { playing -> partySync?.onLockedTransport(playing) == true },
-        ) { lastPublishedSubtitle }
+        ) { lastPublishedSubtitle })
 
         incoming.volume = 1f
         outgoing.stop()
@@ -2412,7 +2478,7 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun topUpEnabled(party: ListenTogether.State): Boolean =
         autoplayEnabled(party) ||
-            (!party.inParty && com.music.bitchord.gateway.SurpriseMe.isSurpriseMe(player?.currentMediaItem?.toSong()))
+            (party.ownsQueue && com.music.bitchord.gateway.SurpriseMe.isSurpriseMe(player?.currentMediaItem?.toSong()))
 
     /**
      * Takes back what AutoPlay queued and hasn't played yet — what switching
@@ -2551,13 +2617,13 @@ class PlaybackService : MediaLibraryService() {
         incoming.addListener(playbackListener)
         incoming.addAnalyticsListener(formatListener)
 
-        mediaSession?.player = SessionPlayer(
+        attachLocalPlayer(SessionPlayer(
             incoming,
             requireNotNull(crossfade),
             onUserIntent = { partySync?.onLocalIntent() },
             deferPlayToParty = { partySync?.shouldDeferPlay() == true },
             lockedTransport = { playing -> partySync?.onLockedTransport(playing) == true },
-        ) { lastPublishedSubtitle }
+        ) { lastPublishedSubtitle })
 
         // The queue moving on used to arrive here as an item transition on the
         // one player that owned the queue. It cannot any more — the incoming
@@ -2578,6 +2644,11 @@ class PlaybackService : MediaLibraryService() {
         // AutoPlay's refill on the same track-change path as the ordinary
         // player transition: otherwise the initial suggestions are consumed
         // one by one and a long background session eventually runs dry.
+        //
+        // The party has to hear about it for the same reason. Jams never mix,
+        // but Connect does, and without this the party went on naming the old
+        // song until the next tick hauled the player back onto it.
+        partySync?.onLocalIntent()
         autoplayLoadJob?.cancel()
         autoplayLoadJob = null
         autoplaySeed = null
@@ -4026,7 +4097,7 @@ class PlaybackService : MediaLibraryService() {
             // fetch Automix makes that neither of those two gates, and a
             // megabyte pulled for an analysis that will not run is a megabyte
             // taken off the connection the party is syncing over.
-            if (!ListenTogether.state.value.inParty) {
+            if (!ListenTogether.state.value.inJam) {
                 launch(Dispatchers.IO) {
                     AudioCache.warmRange(Uri.parse(upgradedUri), 0, ANALYSIS_HEAD_BYTES)
                 }
@@ -4857,7 +4928,7 @@ class PlaybackService : MediaLibraryService() {
 
     /** Serialize only the bounded window needed for a future cold-start resume. */
     private fun saveQueueSnapshot(player: ExoPlayer) {
-        if (ListenTogether.state.value.inParty) return
+        if (!ListenTogether.state.value.ownsQueue) return
         if (player.mediaItemCount == 0) {
             persistedQueueStart = 0
             LastPlayed.clear()
@@ -4875,7 +4946,7 @@ class PlaybackService : MediaLibraryService() {
 
     /** Make the newly installed radio queue the durable cold-start boundary. */
     private fun saveQueueSnapshotImmediately(player: ExoPlayer) {
-        if (ListenTogether.state.value.inParty) return
+        if (!ListenTogether.state.value.ownsQueue) return
         if (player.mediaItemCount == 0) {
             persistedQueueStart = 0
             LastPlayed.clearImmediately()
@@ -5543,13 +5614,13 @@ class PlaybackService : MediaLibraryService() {
         val newCrossfade = createCrossfadeController()
         crossfade = newCrossfade
         newCrossfade.start()
-        mediaSession?.player = SessionPlayer(
+        attachLocalPlayer(SessionPlayer(
             newActive,
             newCrossfade,
             onUserIntent = { partySync?.onLocalIntent() },
             deferPlayToParty = { partySync?.shouldDeferPlay() == true },
             lockedTransport = { playing -> partySync?.onLockedTransport(playing) == true },
-        ) { lastPublishedSubtitle }
+        ) { lastPublishedSubtitle })
         applyOutputRoute()
         if (items.isNotEmpty()) newActive.prepare()
         newActive.playWhenReady = playWhenReady
@@ -6134,6 +6205,8 @@ class PlaybackService : MediaLibraryService() {
         audioManager?.unregisterAudioDeviceCallback(outputDeviceCallback)
         partySync?.stop()
         partySync = null
+        remotePlayer?.release()
+        remotePlayer = null
         player?.let(::savePlaybackState)
         // And to leave the widgets showing a play button. Nothing else reports a
         // swipe-away, so a widget left on the home screen would sit there with a

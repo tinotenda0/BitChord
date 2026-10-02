@@ -1248,4 +1248,22 @@
 
 
 
+    <string name="listen_together_join_as_remote">Partecipa come telecomando</string>
+    <string name="listen_together_join_as_remote_footer">Controlla la musica dell’host da questo telefono senza riprodurla qui.</string>
+    <string name="listen_together_remote_badge">Telecomando</string>
+    <string name="listen_together_you_are_remote">Sei un telecomando. La musica suona sul dispositivo dell’host e questo telefono si limita a controllarla.</string>
+    <string name="connect_devices_title">Dispositivi</string>
+    <string name="connect_playing_on">In riproduzione su %1$s</string>
+    <string name="connect_this_phone">%1$s (questo telefono)</string>
+    <string name="connect_playing">In riproduzione</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_this_phone_output">Uscita audio di questo telefono</string>
+    <string name="connect_setting">Connetti ai miei dispositivi</string>
+    <string name="connect_setting_subtitle">I tuoi dispositivi con accesso si trovano a vicenda: controllane uno da un altro o sposta la musica tra di essi.</string>
+    <string name="connect_needs_gateway">Accedi al tuo account nelle Impostazioni per usare Connect.</string>
+    <string name="connect_asleep">In standby · tocca per riprodurre qui</string>
+    <string name="connect_cant_wake">In standby · apri BitChord su di esso</string>
+    <string name="connect_waking">Risveglio di %1$s…</string>
+    <string name="connect_push_hint">Per inviare musica a un dispositivo con l’app chiusa, installa ntfy e imposta %1$s come server predefinito di ntfy.</string>
 </resources>

@@ -46,7 +46,27 @@ data class PartyMember(
     val connected: Boolean = false,
     val joinedAtMs: Long = 0,
     val lastSeenMs: Long = 0,
-)
+    /**
+     * [ROLE_SPEAKER] plays the party out loud; [ROLE_REMOTE] only drives it.
+     * Defaulted so a server that predates remotes reads everyone as a speaker,
+     * which is what everyone was.
+     */
+    val role: String = ROLE_SPEAKER,
+    /**
+     * Connect only: which phone ([deviceKey], shared by every build on it), which
+     * build ([app], `prod` or `dev`) and what the phone is called.
+     */
+    val deviceKey: String = "",
+    val app: String = "",
+    val deviceName: String = "",
+) {
+    val isRemote: Boolean get() = role == ROLE_REMOTE
+
+    companion object {
+        const val ROLE_SPEAKER = "speaker"
+        const val ROLE_REMOTE = "remote"
+    }
+}
 
 /**
  * Where the party is, as of a server timestamp.
@@ -92,6 +112,13 @@ data class PartyPlayback(
     /** Party-wide setting so a connected listener can refill AutoPlay on host loss. */
     val autoplayEnabled: Boolean = false,
     val updatedAtMs: Long = 0,
+    /**
+     * The member whose real playhead the party follows: the host, while it is a
+     * speaker. That device reports what it is actually playing and the server
+     * re-anchors the party onto it, so it must not seek itself towards the
+     * party the way every other speaker does. Null on a server that predates it.
+     */
+    val clockMemberId: String? = null,
 )
 
 /**
@@ -113,6 +140,10 @@ data class PartyQueue(
 @Serializable
 data class PartySnapshot(
     val code: String = "",
+    /** [KIND_JAM], joined with a code, or [KIND_CONNECT], this account's own devices. */
+    val kind: String = KIND_JAM,
+    /** Connect only: every device this account has, asleep ones included. */
+    val devices: List<ConnectDevice> = emptyList(),
     val createdAtMs: Long = 0,
     val maxMembers: Int = 5,
     /**
@@ -150,6 +181,7 @@ data class PartyPreviewMember(
     val displayName: String = "",
     val avatarUrl: String? = null,
     val isHost: Boolean = false,
+    val role: String = PartyMember.ROLE_SPEAKER,
 )
 
 /** The answer to a create or a join: the code, and this device's key to it. */
@@ -179,6 +211,44 @@ internal data class JoinRequest(
     val avatarUrl: String? = null,
     val maxMembers: Int? = null,
     val autoplayEnabled: Boolean? = null,
+    /** Null joins as a speaker, and keeps the request identical to before remotes. */
+    val role: String? = null,
+)
+
+const val KIND_JAM = "jam"
+const val KIND_CONNECT = "connect"
+
+/** Signing one of this account's devices into its Connect party. */
+@Serializable
+internal data class ConnectRequest(
+    val gatewayUser: String,
+    val gatewayToken: String,
+    val gatewaySalt: String,
+    val deviceKey: String,
+    val app: String,
+    val deviceName: String,
+    val displayName: String,
+    val avatarUrl: String? = null,
+    /** This device's UnifiedPush endpoint, so a sleeping device can be woken. */
+    val pushEndpoint: String? = null,
+    /** Music is coming out of this device right now; see `ListenTogether.localPlaybackActive`. */
+    val playing: Boolean = false,
+)
+
+/**
+ * One of this account's devices as the server remembers it, connected or not.
+ * The ones that are not are what the devices sheet offers to wake.
+ */
+@Serializable
+data class ConnectDevice(
+    val deviceId: String = "",
+    val deviceKey: String = "",
+    val app: String = "",
+    val deviceName: String = "",
+    /** Gave a push endpoint, so it can be woken from another device. */
+    val wakeable: Boolean = false,
+    val connected: Boolean = false,
+    val lastSeenMs: Long = 0,
 )
 
 @Serializable

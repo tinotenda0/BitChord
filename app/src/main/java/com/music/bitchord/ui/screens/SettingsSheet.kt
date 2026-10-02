@@ -410,7 +410,7 @@ fun SettingsScreen(
                     subtitle = party.code?.let {
                         stringResource(R.string.listen_together_in_party, it)
                     } ?: stringResource(R.string.listen_together_subtitle),
-                    badge = party.members.size.takeIf { party.inParty && it > 1 }?.toString(),
+                    badge = party.members.size.takeIf { party.inJam && it > 1 }?.toString(),
                     onClick = onListenTogether,
                 )
             }

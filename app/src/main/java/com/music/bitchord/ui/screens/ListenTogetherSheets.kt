@@ -29,6 +29,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -550,6 +551,8 @@ internal fun JoinConfirmSheet(
     error: String?,
     onJoin: () -> Unit,
     onDismiss: () -> Unit,
+    /** Joins without playing here, to drive the host's music from this phone. */
+    onJoinAsRemote: () -> Unit,
 ) {
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
@@ -627,6 +630,28 @@ internal fun JoinConfirmSheet(
                 fontWeight = FontWeight.SemiBold,
             )
         }
+        Spacer(Modifier.height(10.dp))
+        // Not limited by the party's size: a remote plays nothing, so it does
+        // not take one of the seats, and a full party can still be driven.
+        OutlinedButton(
+            onClick = onJoinAsRemote,
+            enabled = !busy,
+            shape = RoundedCornerShape(percent = 50),
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.listen_together_join_as_remote),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = stringResource(R.string.listen_together_join_as_remote_footer),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
         SheetError(error)
         Spacer(Modifier.height(4.dp))
         TextButton(
