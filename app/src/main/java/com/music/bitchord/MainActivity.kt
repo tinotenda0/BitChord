@@ -2,6 +2,7 @@ package com.music.bitchord
 
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -598,13 +599,26 @@ private fun BitChordApp(
     val homeLoadingMore by viewModel.homeLoadingMore.collectAsStateWithLifecycle()
     val homeRecentlyPlayedLoading by viewModel.homeRecentlyPlayedLoading.collectAsStateWithLifecycle()
 
-    // The top bar's icon is the quiet, always-there nudge; this is the
-    // once-per-launch popup version of the same news. `updateDialogShown`
-    // rides out configuration changes on rememberSaveable so a rotation
-    // doesn't bring it back — only a fresh launch does.
-    var updateDialogShown by rememberSaveable { mutableStateOf(false) }
+    // The top bar's icon is the quiet, always-there nudge; this is the popup
+    // version of the same news, once per release. Keyed on the version rather
+    // than a flag for the launch: the app is often never closed, and a release
+    // that came out while it sat open has to be announced too. Saveable so a
+    // rotation does not bring the same one back.
+    var updateDialogShownFor by rememberSaveable { mutableStateOf<String?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     val updateAvailable by viewModel.updateAvailable.collectAsStateWithLifecycle()
+
+    // Look again whenever the app comes back to the foreground, and every hour
+    // it stays there. The checker skips a look made within the last 15 minutes.
+    val updateLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(updateLifecycle) {
+        updateLifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                viewModel.checkForUpdate()
+                kotlinx.coroutines.delay(60 * 60 * 1000L)
+            }
+        }
+    }
 
     /**
      * The single gate both surfaces read, so the icon can't announce the update
@@ -614,8 +628,8 @@ private fun BitChordApp(
     val updateNotice = updateAvailable
 
     LaunchedEffect(updateNotice) {
-        if (updateNotice != null && !updateDialogShown) {
-            updateDialogShown = true
+        if (updateNotice != null && updateNotice.version != updateDialogShownFor) {
+            updateDialogShownFor = updateNotice.version
             showUpdateDialog = true
         }
     }

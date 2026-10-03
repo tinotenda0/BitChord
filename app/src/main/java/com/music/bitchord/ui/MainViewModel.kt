@@ -1251,6 +1251,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Looks for a new release, unless one was looked for recently. See [AppUpdateChecker.checkIfDue]. */
+    fun checkForUpdate() {
+        viewModelScope.launch { AppUpdateChecker.checkIfDue() }
+    }
+
     /**
      * Whether a play has been registered since the home feed was last fetched.
      *
