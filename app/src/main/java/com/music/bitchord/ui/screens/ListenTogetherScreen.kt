@@ -44,6 +44,7 @@ import androidx.compose.material.icons.rounded.Logout
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Share
+import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -1201,5 +1202,25 @@ private fun ConnectSetting() {
             },
             onClick = { ListenTogether.setConnectEnabled(!enabled) },
         )
+        if (enabled) {
+            val volumeAllowed by ListenTogether.remoteVolumeAllowed.collectAsStateWithLifecycle()
+            RowDivider()
+            SettingsRow(
+                icon = Icons.Rounded.VolumeUp,
+                title = stringResource(R.string.connect_volume_setting),
+                subtitle = stringResource(R.string.connect_volume_setting_subtitle),
+                trailing = {
+                    Switch(
+                        checked = volumeAllowed,
+                        onCheckedChange = ListenTogether::setRemoteVolumeAllowed,
+                        colors = SwitchDefaults.colors(
+                            checkedTrackColor = MaterialTheme.colorScheme.primary,
+                            checkedBorderColor = MaterialTheme.colorScheme.primary,
+                        ),
+                    )
+                },
+                onClick = { ListenTogether.setRemoteVolumeAllowed(!volumeAllowed) },
+            )
+        }
     }
 }

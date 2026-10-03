@@ -88,3 +88,16 @@ func TestWakePostsToTheEndpoint(t *testing.T) {
 		t.Errorf("a device without an endpoint must not be woken, got %v", err)
 	}
 }
+
+func TestAJamStatusLastsUntilTheDeviceComesBack(t *testing.T) {
+	r := Open("", nil, 0)
+	r.Seen("tino", Device{DeviceId: "k:prod"}, 1)
+	r.SetStatus("tino", "k:prod", "jam", 2)
+	if d, _ := r.Get("tino", "k:prod"); d.Status != "jam" {
+		t.Fatalf("status not set: %+v", d)
+	}
+	r.Seen("tino", Device{DeviceId: "k:prod"}, 3)
+	if d, _ := r.Get("tino", "k:prod"); d.Status != "" {
+		t.Fatalf("signing back in must clear it: %+v", d)
+	}
+}

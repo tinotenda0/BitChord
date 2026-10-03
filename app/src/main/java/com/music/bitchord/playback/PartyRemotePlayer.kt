@@ -3,6 +3,7 @@ package com.music.bitchord.playback
 import android.os.Handler
 import android.os.Looper
 import androidx.media3.common.C
+import androidx.media3.common.DeviceInfo
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
@@ -18,6 +19,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * The party, as a player, for a device that only drives it.
@@ -93,6 +95,15 @@ class PartyRemotePlayer(
                     else -> Player.STATE_READY
                 },
             )
+        // The output's volume, as this phone's own: Android hands the volume
+        // buttons and the system volume panel to a remote-playback session, so
+        // pressing them on this phone turns the music up where it is playing,
+        // the way Spotify Connect does. Only when the output allows it.
+        volumeLevel(playback)?.let { (level, steps) ->
+            builder
+                .setDeviceInfo(DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_REMOTE).setMaxVolume(steps).build())
+                .setDeviceVolume(level)
+        }
         if (index != C.INDEX_UNSET) {
             builder
                 .setCurrentMediaItemIndex(index)
@@ -115,17 +126,7 @@ class PartyRemotePlayer(
     }
 
     private fun playlistFor(party: ListenTogether.State): List<MediaItemData> {
-        val current = party.playback.track
-        val queue = party.queue.items
-        // The queue and the track are separate controls, and between them the
-        // party can hold a running order the current song is not in. Showing
-        // that order would put the wrong song under the cursor, so the track
-        // alone stands in for it until the queue catches up.
-        val source = when {
-            current == null -> emptyList()
-            queue.any { it.videoId == current.videoId } -> queue
-            else -> listOf(current)
-        }
+        val source = remotePlaylist(party)
         val key = source
         if (key != playlistKey) {
             playlistKey = key
@@ -152,6 +153,13 @@ class PartyRemotePlayer(
         // The server would refuse anything else; this keeps the buttons from
         // appearing to work and then being silently overruled.
         if (party.controlsLocked || party.connection != ListenTogether.Connection.LIVE) return read.build()
+        if (volumeLevel(party.playback) != null) {
+            read.addAll(
+                COMMAND_GET_DEVICE_VOLUME,
+                COMMAND_SET_DEVICE_VOLUME_WITH_FLAGS,
+                COMMAND_ADJUST_DEVICE_VOLUME_WITH_FLAGS,
+            )
+        }
         return read.addAll(
             COMMAND_PLAY_PAUSE,
             COMMAND_PREPARE,
@@ -206,7 +214,7 @@ class PartyRemotePlayer(
         val chosen = mediaItems.toPartyTracks()
         if (chosen.isEmpty()) return Futures.immediateVoidFuture()
         val start = startIndex.takeIf { it != C.INDEX_UNSET }?.coerceIn(chosen.indices) ?: 0
-        val queue = chosen.subList(start, minOf(chosen.size, start + MAX_QUEUE))
+        val queue = chosen.subList(start, minOf(chosen.size, start + 1 + ListenTogether.state.value.maxUpcoming))
         val position = if (startPositionMs == C.TIME_UNSET) 0L else startPositionMs
         ListenTogether.setQueue(queue, 0)
         // Starting is the caller's next command (setMediaItems, prepare, play),
@@ -235,6 +243,47 @@ class PartyRemotePlayer(
         ListenTogether.queueMove(fromIndex, newIndex, moved.videoId)
         return awaitParty()
     }
+
+    // ------------------------------------------------------------- volume --
+
+    /**
+     * Where a volume change from here is heading, until the output says where
+     * it landed. Without it the slider and the system panel jumped back to the
+     * old level for the round trip, then forward again.
+     */
+    private var pendingVolume: Pair<Int, Long>? = null
+
+    /** The output's volume as (level, steps), or null when it cannot be changed from here. */
+    private fun volumeLevel(playback: com.music.bitchord.data.listentogether.PartyPlayback): Pair<Int, Int>? {
+        val volume = playback.volume ?: return null
+        if (!playback.volumeControl) return null
+        val steps = playback.volumeSteps.coerceAtLeast(1)
+        val pending = pendingVolume?.takeIf { android.os.SystemClock.elapsedRealtime() < it.second }?.first
+        return (pending ?: (volume * steps).roundToInt()).coerceIn(0, steps) to steps
+    }
+
+    private fun requestVolume(level: Int): ListenableFuture<*> {
+        val (_, steps) = volumeLevel(ListenTogether.state.value.playback) ?: return Futures.immediateVoidFuture()
+        val target = level.coerceIn(0, steps)
+        pendingVolume = target to android.os.SystemClock.elapsedRealtime() + VOLUME_PENDING_MS
+        if (target > 0) lastAudibleLevel = target
+        ListenTogether.setVolume(target.toDouble() / steps)
+        invalidateState()
+        return Futures.immediateVoidFuture()
+    }
+
+    private var lastAudibleLevel = 0
+
+    override fun handleSetDeviceVolume(deviceVolume: Int, flags: Int): ListenableFuture<*> = requestVolume(deviceVolume)
+
+    override fun handleIncreaseDeviceVolume(flags: Int): ListenableFuture<*> =
+        requestVolume((volumeLevel(ListenTogether.state.value.playback)?.first ?: 0) + 1)
+
+    override fun handleDecreaseDeviceVolume(flags: Int): ListenableFuture<*> =
+        requestVolume((volumeLevel(ListenTogether.state.value.playback)?.first ?: 0) - 1)
+
+    override fun handleSetDeviceMuted(muted: Boolean, flags: Int): ListenableFuture<*> =
+        requestVolume(if (muted) 0 else lastAudibleLevel.coerceAtLeast(1))
 
     override fun handlePrepare(): ListenableFuture<*> = Futures.immediateVoidFuture()
 
@@ -279,8 +328,35 @@ class PartyRemotePlayer(
 
     private companion object {
         const val ANSWER_TIMEOUT_MS = 2_500L
+        const val VOLUME_PENDING_MS = 1_500L
+    }
+}
 
-        /** The current track and the 25 a party holds after it. */
-        const val MAX_QUEUE = 26
+/**
+ * The running order a remote shows: the party's queue, with the current song's
+ * entry taken from the party's track wherever that knows more.
+ *
+ * The two are separate records. The queue's copy of a song is whatever the
+ * device that queued it knew, often no length at all (anything picked from a
+ * row that showed none); the track is the one the device playing it reports
+ * its real length into. A remote built from the queue alone had no length for
+ * the song playing, which read as 0:00 / -0:00 with the knob at the end, and
+ * the lyrics, which wait for a length to match against, never loaded for it.
+ *
+ * And the queue and the track are separate controls, so between them the party
+ * can hold a running order the current song is not in. Showing that order
+ * would put the wrong song under the cursor, so the track alone stands in for
+ * it until the queue catches up.
+ */
+internal fun remotePlaylist(party: ListenTogether.State): List<PartyTrack> {
+    val current = party.playback.track ?: return emptyList()
+    val queue = party.queue.items
+    if (queue.none { it.videoId == current.videoId }) return listOf(current)
+    return queue.map { entry ->
+        if (entry.videoId == current.videoId && entry.durationMs == null && current.durationMs != null) {
+            entry.copy(durationMs = current.durationMs)
+        } else {
+            entry
+        }
     }
 }

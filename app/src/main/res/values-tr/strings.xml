@@ -1282,4 +1282,7 @@
     <string name="connect_cant_wake">Uykuda · üzerinde BitChord’u aç</string>
     <string name="connect_waking">%1$s uyandırılıyor…</string>
     <string name="connect_push_hint">Uygulaması kapalı bir cihaza müzik göndermek için o cihaza ntfy kur ve ntfy’nin varsayılan sunucusunu %1$s yap.</string>
+    <string name="connect_in_a_jam">Bir Jam’de</string>
+    <string name="connect_volume_setting">Cihazlarımın bu sesi değiştirmesine izin ver</string>
+    <string name="connect_volume_setting_subtitle">Bu cihaz çalarken diğer cihazların ses tuşları dahil sesi açıp kısabilir.</string>
 </resources>

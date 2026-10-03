@@ -89,6 +89,12 @@ var (
 	ConnectHandoverMs    = int64(getInt("JAM_CONNECT_HANDOVER_MS", 5*60*1000))
 	// How far ahead a transferred song restarts, for the new device to load it.
 	TransferLeadMs       = int64(getInt("JAM_TRANSFER_LEAD_MS", 1500))
+	// Connect holds a whole playlist, not a jam's handful of picks: it is one
+	// person's own listening, and a queue cut to 25 turned the rest of an album
+	// into AutoPlay.
+	ConnectMaxUpcoming   = getInt("JAM_CONNECT_MAX_UPCOMING", 200)
+	// How long a device that left Connect for a jam is shown as being in one.
+	JamStatusMs          = int64(getInt("JAM_STATUS_MS", 12*60*60*1000))
 	ConnectRatePerMinute = getInt("JAM_CONNECT_RATE_PER_MINUTE", 30)
 	// Where the account device list is saved; empty keeps it in memory only.
 	DataDir              = getString("JAM_DATA_DIR", "")

@@ -676,6 +676,12 @@ class PlaybackService : MediaLibraryService() {
     /** Stands in for [localSessionPlayer] while this device is a party remote. */
     private var remotePlayer: PartyRemotePlayer? = null
 
+    /** Shares this device's volume with the account's other devices while it plays for them. */
+    private var connectVolume: ConnectVolume? = null
+
+    /** The longest a remote stays in the session after this device takes playback. */
+    private val HANDOVER_WAIT_MS = 8_000L
+
     /** Commands exposed as the secondary buttons on the media notification. */
     private val favoriteCommand = SessionCommand(ACTION_TOGGLE_FAVORITE, Bundle.EMPTY)
     private val autoplayCommand = SessionCommand(ACTION_TOGGLE_AUTOPLAY, Bundle.EMPTY)
@@ -1566,6 +1572,7 @@ class PlaybackService : MediaLibraryService() {
         // After the player exists and before the session is built: the
         // session's wrapper reports the user's actions to it.
         partySync = PartySync(scope) { player }.also { it.start() }
+        connectVolume = ConnectVolume(this, scope).also { it.start() }
         // AutoPlay has one shared supplier in a party. The host supplies it
         // while connected; if they disappear, the lowest stable connected member
         // ID takes over. That election is deterministic on every phone, so two
@@ -1665,6 +1672,23 @@ class PlaybackService : MediaLibraryService() {
                         session.player = stand
                     } else if (!remote) {
                         val stand = remotePlayer ?: return@collect
+                        // Becoming the device that plays. The remote stays in the
+                        // session until this device's own player is actually
+                        // going: swapped any sooner, the session holds a paused
+                        // player for the second it takes to load, Android takes
+                        // the service out of the foreground, and the start that
+                        // follows is refused from the background. Media3 then
+                        // pauses, and the pause went to the whole party, which is
+                        // what moving playback to a device on a desk did.
+                        withTimeoutOrNull(HANDOVER_WAIT_MS) {
+                            while (true) {
+                                val party = ListenTogether.state.value
+                                if (party.isRemote) return@withTimeoutOrNull
+                                if (player?.playWhenReady == true || !party.playback.isPlaying) break
+                                delay(100)
+                            }
+                        }
+                        if (ListenTogether.state.value.isRemote) return@collect
                         remotePlayer = null
                         localSessionPlayer?.let { session.player = it }
                         stand.release()
@@ -6207,6 +6231,8 @@ class PlaybackService : MediaLibraryService() {
         partySync = null
         remotePlayer?.release()
         remotePlayer = null
+        connectVolume?.stop()
+        connectVolume = null
         player?.let(::savePlaybackState)
         // And to leave the widgets showing a play button. Nothing else reports a
         // swipe-away, so a widget left on the home screen would sit there with a

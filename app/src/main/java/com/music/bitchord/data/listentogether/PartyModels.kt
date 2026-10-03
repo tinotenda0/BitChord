@@ -32,6 +32,12 @@ data class PartyTrack(
     val durationMs: Long? = null,
     /** Preserves the queue's shared manual/AutoPlay section boundary. */
     val fromAutoplay: Boolean = false,
+    /**
+     * From the album or playlist being played rather than queued by hand.
+     * Without it every device rebuilt a playlist as hand-queued songs, and
+     * the next pick kept them as if they had been asked for.
+     */
+    val fromContext: Boolean = false,
 )
 
 /** One signed-in device in the party, as every other device sees it. */
@@ -119,6 +125,22 @@ data class PartyPlayback(
      * party the way every other speaker does. Null on a server that predates it.
      */
     val clockMemberId: String? = null,
+    /**
+     * Connect only: the output's volume, 0 to 1, or null while it is unknown.
+     * [volumeControl] says whether the output lets other devices change it,
+     * and [volumeSteps] how many steps it has. Not part of [seq]: it changes as
+     * a slider moves and is never a control anybody aligns to.
+     */
+    val volume: Double? = null,
+    val volumeControl: Boolean = false,
+    val volumeSteps: Int = 15,
+    /**
+     * The last volume another device asked for, and how many requests there
+     * have been. Apart from [volume], which is only what the output reports, so
+     * a report can never be mistaken for a request: see `ConnectVolume`.
+     */
+    val volumeTarget: Double? = null,
+    val volumeReqSeq: Long = 0,
 )
 
 /**
@@ -144,6 +166,8 @@ data class PartySnapshot(
     val kind: String = KIND_JAM,
     /** Connect only: every device this account has, asleep ones included. */
     val devices: List<ConnectDevice> = emptyList(),
+    /** How many tracks may follow the current one: 25 in a jam, a playlist's worth in Connect. */
+    val maxUpcoming: Int = DEFAULT_MAX_UPCOMING,
     val createdAtMs: Long = 0,
     val maxMembers: Int = 5,
     /**
@@ -216,6 +240,9 @@ internal data class JoinRequest(
 )
 
 const val KIND_JAM = "jam"
+
+/** A jam's upcoming-queue limit, and what a server that does not say is taken to have. */
+const val DEFAULT_MAX_UPCOMING = 25
 const val KIND_CONNECT = "connect"
 
 /** Signing one of this account's devices into its Connect party. */
@@ -249,6 +276,8 @@ data class ConnectDevice(
     val wakeable: Boolean = false,
     val connected: Boolean = false,
     val lastSeenMs: Long = 0,
+    /** "jam" while it has left Connect for a jam; empty otherwise. */
+    val status: String = "",
 )
 
 @Serializable

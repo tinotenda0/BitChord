@@ -39,6 +39,10 @@ type Track struct {
 	ThumbnailUrl *string `json:"thumbnailUrl,omitempty"`
 	DurationMs   *int64  `json:"durationMs,omitempty"`
 	FromAutoplay bool    `json:"fromAutoplay"`
+	// FromContext marks a track that came from the album or playlist being
+	// played, as opposed to one somebody queued. Carried so every device keeps
+	// the queue's sections as the device that built it had them.
+	FromContext  bool    `json:"fromContext,omitempty"`
 }
 
 func TrackFromWire(raw map[string]interface{}) *Track {
@@ -78,8 +82,10 @@ func TrackFromWire(raw map[string]interface{}) *Track {
 	}
 
 	fromAutoplay, _ := raw["fromAutoplay"].(bool)
+	fromContext, _ := raw["fromContext"].(bool)
 
 	return &Track{
+		FromContext:  fromContext,
 		VideoId:      vid,
 		Title:        title,
 		Artist:       artist,
@@ -104,6 +110,8 @@ type PlaybackState struct {
 	StartedBy     *string  `json:"startedBy"`
 	StartedByName *string  `json:"startedByName"`
 	AutoplayEnabled bool   `json:"autoplayEnabled"`
+	// MaxUpcoming is how many tracks may follow the current one.
+	MaxUpcoming int `json:"-"`
 }
 
 func NewPlaybackState() *PlaybackState {
@@ -111,6 +119,7 @@ func NewPlaybackState() *PlaybackState {
 	return &PlaybackState{
 		Queue:       make([]*Track, 0),
 		QueueIndex:  -1,
+		MaxUpcoming: config.MaxUpcomingQueue,
 		AnchorMs:    now,
 		UpdatedAtMs: now,
 	}
@@ -238,7 +247,7 @@ func (p *PlaybackState) SetQueue(memberId *string, queue []*Track, queueIndex in
 
 	if queueIndex >= 0 && queueIndex < len(queue) {
 		pastAndCurrent := queue[:queueIndex+1]
-		endUpcoming := queueIndex + 1 + config.MaxUpcomingQueue
+		endUpcoming := queueIndex + 1 + p.MaxUpcoming
 		if endUpcoming > len(queue) {
 			endUpcoming = len(queue)
 		}
@@ -249,7 +258,7 @@ func (p *PlaybackState) SetQueue(memberId *string, queue []*Track, queueIndex in
 		p.Queue = newQ
 		p.QueueIndex = queueIndex
 	} else {
-		maxLen := config.MaxQueueLength
+		maxLen := 1 + p.MaxUpcoming
 		if len(queue) < maxLen {
 			maxLen = len(queue)
 		}
@@ -274,7 +283,7 @@ func (p *PlaybackState) AddUpcoming(memberId *string, tracks []*Track, playNext 
 		currentUpcoming = len(p.Queue)
 	}
 
-	slotsLeft := config.MaxUpcomingQueue - currentUpcoming
+	slotsLeft := p.MaxUpcoming - currentUpcoming
 	if slotsLeft <= 0 {
 		return false, "queue_full"
 	}
@@ -502,6 +511,21 @@ type Party struct {
 	EmptySinceMs    *int64
 	// LastReanchorMs is when Reanchor last moved the party. See ReanchorCooldownMs.
 	LastReanchorMs int64
+	// Volume is the Connect output's volume, 0 to 1, or nil while unknown (no
+	// output, or a new one that has not said yet). VolumeControl is whether the
+	// output lets the account's other devices change it; VolumeSteps is how
+	// many steps its volume has, so a remote's buttons move it a step at a time.
+	Volume        *float64
+	VolumeControl bool
+	VolumeSteps   int
+	// VolumeTarget is the last volume another device asked for, and
+	// VolumeReqSeq counts those requests. Kept apart from Volume, which is only
+	// ever what the output reports: when they shared one field, a report of an
+	// older level landed after a newer request, overwrote it, and the output
+	// then applied its own stale report as if it had been asked to, and the
+	// volume bounced between the two for as long as anyone touched it.
+	VolumeTarget *float64
+	VolumeReqSeq int64
 	// PendingOutput is a device woken to take playback over: when it signs in
 	// before PendingUntilMs it is handed it, whatever is playing elsewhere.
 	PendingOutput  string
@@ -699,6 +723,38 @@ func (p *Party) JoinConnect(userId, deviceKey, app, deviceName, displayName stri
 
 // setOutput makes m the one device playing a Connect party. The output is the
 // host and so the clock; whoever held it becomes a remote.
+// SetVolume asks the output to play at volume. Refused when the output does not
+// let other devices change it, which is that device's owner's choice.
+func (p *Party) SetVolume(member *Member, volume float64) error {
+	if !p.IsConnect() {
+		return NewPartyError(409, "not_connect", "Volume can only be changed between your own devices.")
+	}
+	if volume < 0 || volume > 1 || volume != volume {
+		return NewPartyError(422, "invalid_volume", "Volume must be between 0 and 1.")
+	}
+	if p.ClockMember() != member && !(p.VolumeControl && p.Volume != nil) {
+		return NewPartyError(403, "volume_locked", "That device doesn’t let other devices change its volume.")
+	}
+	p.VolumeTarget = &volume
+	p.VolumeReqSeq++
+	return nil
+}
+
+// VolumeState records what the output reports about its own volume.
+func (p *Party) VolumeState(member *Member, volume float64, control bool, steps int) error {
+	if !p.IsConnect() || p.ClockMember() != member {
+		return NewPartyError(403, "not_output", "Only the device playing can say what its volume is.")
+	}
+	if volume < 0 || volume > 1 || volume != volume {
+		return NewPartyError(422, "invalid_volume", "Volume must be between 0 and 1.")
+	}
+	if steps < 1 || steps > 1000 {
+		steps = 15
+	}
+	p.Volume, p.VolumeControl, p.VolumeSteps = &volume, control, steps
+	return nil
+}
+
 func (p *Party) setOutput(m *Member) {
 	for _, other := range p.Members {
 		if other != m && other.IsHost {
@@ -709,6 +765,10 @@ func (p *Party) setOutput(m *Member) {
 	m.IsHost = true
 	m.Role = protocol.RoleSpeaker
 	p.LastReanchorMs = 0
+	// A different device, with its own volume, which it has not said yet.
+	// The request count carries on, so the new output can tell a request made
+	// before it arrived (which it ignores) from one made after.
+	p.Volume, p.VolumeControl, p.VolumeTarget = nil, false, nil
 }
 
 // Transfer moves a Connect party's playback to another of its devices.
@@ -748,6 +808,25 @@ func (p *Party) handOver(m *Member) {
 	}
 	pb.Seq++
 	pb.UpdatedAtMs = now
+}
+
+// LearnDuration records the current track's length from the device playing
+// it, when the track arrived without one: chosen from a row that showed no
+// length, say. Every remote's progress bar needs it, and only a player knows it.
+// Reports true when it changed anything, for the caller to broadcast.
+func (p *Party) LearnDuration(member *Member, videoId string, durationMs int64) bool {
+	pb := p.Playback
+	if p.ClockMember() != member || pb.Track == nil || pb.Track.VideoId != videoId || durationMs <= 0 {
+		return false
+	}
+	if pb.Track.DurationMs != nil && *pb.Track.DurationMs > 0 {
+		return false
+	}
+	known := *pb.Track
+	known.DurationMs = &durationMs
+	pb.Track = &known
+	pb.Seq++
+	return true
 }
 
 // ExpectOutput marks a device being woken as the one to hand playback to when
@@ -859,6 +938,17 @@ func (p *Party) ClockMember() *Member {
 // clock member named so that member knows to report and not to correct.
 func (p *Party) PlaybackToWire(serverMs int64) map[string]interface{} {
 	wire := p.Playback.ToWire(serverMs)
+	if p.IsConnect() {
+		// On the state frame rather than the members frame: it is what a
+		// remote's slider and volume buttons follow, and it changes as often as
+		// somebody turns it. Not counted in seq, so moving it never reads to a
+		// device as a control to put itself on.
+		wire["volume"] = p.Volume
+		wire["volumeControl"] = p.VolumeControl && p.Volume != nil
+		wire["volumeSteps"] = p.VolumeSteps
+		wire["volumeTarget"] = p.VolumeTarget
+		wire["volumeReqSeq"] = p.VolumeReqSeq
+	}
 	if c := p.ClockMember(); c != nil {
 		wire["clockMemberId"] = c.MemberId
 	} else {
@@ -1091,6 +1181,7 @@ func (p *Party) ToWire() map[string]interface{} {
 	return map[string]interface{}{
 		"code":            p.Code,
 		"kind":            p.Kind,
+		"maxUpcoming":     p.Playback.MaxUpcoming,
 		"createdAtMs":     p.CreatedAtMs,
 		"maxMembers":      p.MaxMembers,
 		"hostOnlyControl": p.HostOnlyControl,
@@ -1188,6 +1279,7 @@ func (s *PartyStore) Account(account string) *Party {
 	}
 	p := NewPartyWithMaxMembers(code, config.ConnectMaxDevices)
 	p.Kind = KindConnect
+	p.Playback.MaxUpcoming = config.ConnectMaxUpcoming
 	p.Account = account
 	s.parties[code] = p
 	return p

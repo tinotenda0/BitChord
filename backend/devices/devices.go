@@ -32,6 +32,10 @@ type Device struct {
 	DeviceName   string `json:"deviceName"`
 	PushEndpoint string `json:"pushEndpoint,omitempty"`
 	LastSeenMs   int64  `json:"lastSeenMs"`
+	// Status is "jam" while the device has left Connect for a jam, so the
+	// others show it as busy rather than as gone; StatusAtMs is when.
+	Status     string `json:"status,omitempty"`
+	StatusAtMs int64  `json:"statusAtMs,omitempty"`
 }
 
 // Wakeable reports whether this device can be woken with a push.
@@ -105,9 +109,21 @@ func (r *Registry) Seen(account string, d Device, now int64) {
 		d.PushEndpoint = prev.PushEndpoint
 	}
 	d.LastSeenMs = now
+	// Signing into Connect is coming back from wherever it was.
+	d.Status, d.StatusAtMs = "", 0
 	devs[d.DeviceId] = &d
 	r.forget(now)
 	r.save()
+}
+
+// SetStatus marks a device as being somewhere else, such as in a jam.
+func (r *Registry) SetStatus(account, deviceId, status string, now int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if d, ok := r.accounts[account][deviceId]; ok {
+		d.Status, d.StatusAtMs, d.LastSeenMs = status, now, now
+		r.save()
+	}
 }
 
 // Get returns one device of an account.

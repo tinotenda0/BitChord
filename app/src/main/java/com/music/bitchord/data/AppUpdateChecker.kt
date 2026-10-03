@@ -21,7 +21,10 @@ import java.io.File
 /**
  * BitChord ships as a sideloaded APK rather than through a store, so there's
  * nothing to push an update notice on its own — this polls the release
- * channel's latest once per launch and compares it against the running build.
+ * channel's latest and compares it against the running build: whenever the app
+ * comes to the foreground, and hourly while it stays there (see [checkIfDue]).
+ * Once per launch was not enough: an app that is never closed never launches
+ * again, and never heard about a release.
  *
  * The update itself is also handled here: the release's `.apk` asset is
  * downloaded into the app's cache and handed to the system package installer,
@@ -69,7 +72,25 @@ object AppUpdateChecker {
     @Volatile
     private var downloadCancelled = false
 
+    /** When the last check finished, for [checkIfDue]. */
+    @Volatile
+    private var lastCheckedAtMs = 0L
+
+    /** The shortest gap between two checks, however often the app is reopened. */
+    private const val MIN_CHECK_INTERVAL_MS = 15 * 60 * 1000L
+
+    /**
+     * Checks unless one ran in the last [MIN_CHECK_INTERVAL_MS]. What the
+     * foreground and the hourly tick call, so switching in and out of the app
+     * does not ask the server every time.
+     */
+    suspend fun checkIfDue() {
+        if (System.currentTimeMillis() - lastCheckedAtMs < MIN_CHECK_INTERVAL_MS) return
+        check()
+    }
+
     suspend fun check() = withContext(Dispatchers.IO) {
+        lastCheckedAtMs = System.currentTimeMillis()
         runCatching {
             val request = Request.Builder().url(LATEST_RELEASE_URL).build()
             val body = Http.client.newCall(request).execute().use { response ->
@@ -84,7 +105,17 @@ object AppUpdateChecker {
             // A channel's latest only ever moves forward, so any version other than this
             // build's own is a newer one. A build made outside CI ("1.7") is always behind.
             if (latest != BuildConfig.VERSION_NAME) {
+                val previous = _available.value
+                // A newer release than the one already downloaded: that file is
+                // now the wrong one to install, so the next "Update" starts over.
+                if (previous != null && previous.version != latest && _download.value is DownloadState.Ready) {
+                    _download.value = DownloadState.Idle
+                }
                 _available.value = UpdateInfo(latest, url, apkUrl, notes)
+            } else {
+                // Already on it (installed from the page directly, say): nothing
+                // to announce any more.
+                _available.value = null
             }
         }
     }

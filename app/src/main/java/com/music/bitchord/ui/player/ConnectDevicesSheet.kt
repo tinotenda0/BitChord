@@ -18,6 +18,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Speaker
+import androidx.compose.material.icons.rounded.VolumeDown
+import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.Slider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -147,6 +154,15 @@ internal fun ConnectDevicesSheet(
             }
         }
 
+        // The device playing, turned up or down from here. Only when this is
+        // not that device (its own buttons do that) and it allows it.
+        val playback = state.playback
+        val volume = playback.volume
+        if (state.isRemote && volume != null && playback.volumeControl) {
+            Spacer(Modifier.height(10.dp))
+            RemoteVolume(volume = volume, steps = playback.volumeSteps)
+        }
+
         Spacer(Modifier.height(10.dp))
         DeviceRow(
             icon = Icons.Rounded.Headphones,
@@ -169,6 +185,9 @@ private data class DeviceEntry(
     /** Not connected at all, so reaching it means waking it. */
     val sleeping: Boolean get() = member == null || !member.connected
 
+    /** Away from Connect because it is in a jam, not because it is asleep. */
+    val inJam: Boolean get() = sleeping && known?.status == "jam"
+
     fun isOutput(outputId: String?): Boolean = member != null && member.memberId == outputId
 
     /**
@@ -178,6 +197,9 @@ private data class DeviceEntry(
     fun action(outputId: String?): (() -> Unit)? = when {
         isOutput(outputId) -> null
         member != null && member.connected -> { { ListenTogether.transfer(member.memberId) } }
+        // Busy in a jam: waking it would drag it out of that, which is its
+        // owner's call to make on that device, not this one's.
+        inJam -> null
         known != null && known.wakeable -> { { ListenTogether.wake(known.deviceId) } }
         else -> null
     }
@@ -194,6 +216,7 @@ private fun appLabel(app: String): String = when (app) {
 private fun statusFor(entry: DeviceEntry, outputId: String?): String? = when {
     entry.isOutput(outputId) -> stringResource(R.string.connect_playing)
     !entry.sleeping -> null
+    entry.inJam -> stringResource(R.string.connect_in_a_jam)
     entry.known?.wakeable == true -> stringResource(R.string.connect_asleep)
     else -> stringResource(R.string.connect_cant_wake)
 }
@@ -267,3 +290,75 @@ private fun DeviceRow(
         }
     }
 }
+
+/**
+ * A slider for the output's volume. Follows the output while untouched, and
+ * the finger while dragged: sending every position would be dozens of controls
+ * a second, so a change goes out at most every [VOLUME_SEND_MS] and once more
+ * where the finger lets go.
+ */
+@Composable
+private fun RemoteVolume(volume: Double, steps: Int) {
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    var lastSentAt by remember { mutableStateOf(0L) }
+    // Where the finger let go, held until the output reports it has got there
+    // (or a moment passes), so the thumb does not jump back to the old level
+    // for the round trip.
+    var released by remember { mutableStateOf<Float?>(null) }
+    LaunchedEffect(released) {
+        if (released != null) {
+            delay(VOLUME_SETTLE_MS)
+            released = null
+        }
+    }
+    LaunchedEffect(volume) {
+        val held = released ?: return@LaunchedEffect
+        if (kotlin.math.abs(volume - held) <= 0.5 / steps.coerceAtLeast(1)) released = null
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ROW_SHAPE)
+            .background(Color.White.copy(alpha = 0.05f))
+            .padding(horizontal = 14.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.VolumeDown,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.7f),
+            modifier = Modifier.size(20.dp),
+        )
+        Slider(
+            value = dragging ?: released ?: volume.toFloat(),
+            onValueChange = { value ->
+                dragging = value
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (now - lastSentAt >= VOLUME_SEND_MS) {
+                    lastSentAt = now
+                    ListenTogether.setVolume(value.toDouble())
+                }
+            },
+            onValueChangeFinished = {
+                dragging?.let {
+                    ListenTogether.setVolume(it.toDouble())
+                    released = it
+                }
+                dragging = null
+            },
+            steps = (steps - 1).coerceIn(0, 100),
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 8.dp),
+        )
+        Icon(
+            imageVector = Icons.Rounded.VolumeUp,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.7f),
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+private const val VOLUME_SEND_MS = 120L
+private const val VOLUME_SETTLE_MS = 1_500L

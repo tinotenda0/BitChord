@@ -1266,4 +1266,7 @@
     <string name="connect_cant_wake">In standby · apri BitChord su di esso</string>
     <string name="connect_waking">Risveglio di %1$s…</string>
     <string name="connect_push_hint">Per inviare musica a un dispositivo con l’app chiusa, installa ntfy e imposta %1$s come server predefinito di ntfy.</string>
+    <string name="connect_in_a_jam">In una Jam</string>
+    <string name="connect_volume_setting">Consenti ai miei dispositivi di cambiare questo volume</string>
+    <string name="connect_volume_setting_subtitle">Quando questo dispositivo è in riproduzione, gli altri tuoi dispositivi possono alzarne o abbassarne il volume, anche con i loro tasti del volume.</string>
 </resources>

@@ -2,6 +2,7 @@ package com.music.bitchord
 
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -598,13 +599,26 @@ private fun BitChordApp(
     val homeLoadingMore by viewModel.homeLoadingMore.collectAsStateWithLifecycle()
     val homeRecentlyPlayedLoading by viewModel.homeRecentlyPlayedLoading.collectAsStateWithLifecycle()
 
-    // The top bar's icon is the quiet, always-there nudge; this is the
-    // once-per-launch popup version of the same news. `updateDialogShown`
-    // rides out configuration changes on rememberSaveable so a rotation
-    // doesn't bring it back — only a fresh launch does.
-    var updateDialogShown by rememberSaveable { mutableStateOf(false) }
+    // The top bar's icon is the quiet, always-there nudge; this is the popup
+    // version of the same news, once per release. Keyed on the version rather
+    // than a flag for the launch: the app is often never closed, and a release
+    // that came out while it sat open has to be announced too. Saveable so a
+    // rotation does not bring the same one back.
+    var updateDialogShownFor by rememberSaveable { mutableStateOf<String?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
     val updateAvailable by viewModel.updateAvailable.collectAsStateWithLifecycle()
+
+    // Look again whenever the app comes back to the foreground, and every hour
+    // it stays there. The checker skips a look made within the last 15 minutes.
+    val updateLifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    LaunchedEffect(updateLifecycle) {
+        updateLifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
+            while (true) {
+                viewModel.checkForUpdate()
+                kotlinx.coroutines.delay(60 * 60 * 1000L)
+            }
+        }
+    }
 
     /**
      * The single gate both surfaces read, so the icon can't announce the update
@@ -614,8 +628,8 @@ private fun BitChordApp(
     val updateNotice = updateAvailable
 
     LaunchedEffect(updateNotice) {
-        if (updateNotice != null && !updateDialogShown) {
-            updateDialogShown = true
+        if (updateNotice != null && updateNotice.version != updateDialogShownFor) {
+            updateDialogShownFor = updateNotice.version
             showUpdateDialog = true
         }
     }
@@ -1158,34 +1172,19 @@ private fun BitChordApp(
                 ?: (0 until c.mediaItemCount).map { c.getMediaItemAt(it).toSong() }
             val currentIndex = c.currentMediaItemIndex
 
-            // A jam's queue is everybody's, so a pick slots into it. Connect is
-            // this user's own music, played wherever: an ordinary play.
-            if (ListenTogether.state.value.inJam) {
-                val selectedSong = songs.getOrNull(index) ?: return@launch
-                val party = ListenTogether.state.value
-                val partyQueue = party.queue.items
-                val partyIndex = partyQueue.indexOfFirst { it.videoId == party.playback.track?.videoId }
-                val upcomingPartyTracks = if (partyIndex >= 0) {
-                    partyQueue.drop(partyIndex + 1)
-                } else {
-                    emptyList()
-                }
-                val timeline = QueueCoordinator.buildPartyPlaybackQueue(
-                    tappedSong = selectedSong,
-                    source = source,
-                    upcomingPartyTracks = upcomingPartyTracks,
-                )
-                c.playSongs(timeline, 0)
-            } else {
-                val result = QueueCoordinator.buildContextQueue(
-                    currentTimeline = currentTimeline,
-                    currentIndex = currentIndex,
-                    newContextSongs = songs,
-                    selectedIndex = index,
-                    contextSource = source,
-                )
-                c.playSongs(result.timeline, result.startIndex)
-            }
+            // The same in a party as alone: the album or playlist the song was
+            // picked from comes with it, and anything queued by hand is kept in
+            // front of it. Tracks keep their section across the party (see
+            // PartyTrack.fromContext), so hand-queued picks from everybody in a
+            // jam are still recognised as such here.
+            val result = QueueCoordinator.buildContextQueue(
+                currentTimeline = currentTimeline,
+                currentIndex = currentIndex,
+                newContextSongs = songs,
+                selectedIndex = index,
+                contextSource = source,
+            )
+            c.playSongs(result.timeline, result.startIndex)
             // Start playback in the mini-player; the user opens the full view by tapping it.
         }
     }
@@ -1400,8 +1399,9 @@ private fun BitChordApp(
             controller?.let {
                 if (ListenTogether.state.value.inParty) {
                     val upcoming = (it.mediaItemCount - (it.currentMediaItemIndex + 1)).coerceAtLeast(0)
-                    if (upcoming >= 25) {
-                        showQueueNotice(context.getString(R.string.party_queue_full, 25))
+                    val limit = ListenTogether.state.value.maxUpcoming
+                    if (upcoming >= limit) {
+                        showQueueNotice(context.getString(R.string.party_queue_full, limit))
                         return@launch
                     }
                 }
@@ -1430,8 +1430,9 @@ private fun BitChordApp(
             controller?.let {
                 if (ListenTogether.state.value.inParty) {
                     val upcoming = (it.mediaItemCount - (it.currentMediaItemIndex + 1)).coerceAtLeast(0)
-                    if (upcoming >= 25) {
-                        showQueueNotice(context.getString(R.string.party_queue_full, 25))
+                    val limit = ListenTogether.state.value.maxUpcoming
+                    if (upcoming >= limit) {
+                        showQueueNotice(context.getString(R.string.party_queue_full, limit))
                         return@launch
                     }
                 }
@@ -1545,9 +1546,10 @@ private fun BitChordApp(
                 } else {
                     val toAdd = if (ListenTogether.state.value.inParty) {
                         val upcoming = (c.mediaItemCount - (c.currentMediaItemIndex + 1)).coerceAtLeast(0)
-                        val slotsLeft = (25 - upcoming).coerceAtLeast(0)
+                        val limit = ListenTogether.state.value.maxUpcoming
+                        val slotsLeft = (limit - upcoming).coerceAtLeast(0)
                         if (slotsLeft <= 0) {
-                            showQueueNotice(context.getString(R.string.party_queue_full, 25))
+                            showQueueNotice(context.getString(R.string.party_queue_full, limit))
                             return@launch
                         }
                         songs.take(slotsLeft)

@@ -1327,4 +1327,7 @@
     <string name="connect_cant_wake">Schläft · öffne BitChord darauf</string>
     <string name="connect_waking">%1$s wird geweckt…</string>
     <string name="connect_push_hint">Um Musik an ein Gerät mit geschlossener App zu senden, installiere ntfy darauf und stelle den Standardserver von ntfy auf %1$s.</string>
+    <string name="connect_in_a_jam">In einer Jam</string>
+    <string name="connect_volume_setting">Lautstärke von meinen Geräten ändern lassen</string>
+    <string name="connect_volume_setting_subtitle">Wenn dieses Gerät abspielt, können deine anderen Geräte es lauter oder leiser stellen, auch mit ihren Lautstärketasten.</string>
 </resources>

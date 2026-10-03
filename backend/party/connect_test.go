@@ -1,6 +1,7 @@
 package party
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/KabirSinghBhatia/BitChord/backend/clock"
@@ -293,5 +294,98 @@ func TestAPlayingDeviceDoesNotStealAPartyThatIsPlaying(t *testing.T) {
 	tablet, _ := p.JoinConnect("gw:tino", "tablet001", "prod", "Tablet", "Tino", nil, true)
 	if !tablet.IsRemote() {
 		t.Fatalf("a party already playing elsewhere keeps its output")
+	}
+}
+
+func TestConnectHoldsAWholePlaylist(t *testing.T) {
+	p := connectParty(t)
+	phone := join(t, p, "phone0001", "prod")
+	album := make([]*Track, 120)
+	for i := range album {
+		album[i] = &Track{VideoId: fmt.Sprintf("t%d", i), FromContext: true}
+	}
+	p.Playback.SetQueue(&phone.MemberId, album, 0)
+	if len(p.Playback.Queue) != 120 {
+		t.Fatalf("a 120-track album must survive in Connect, got %d", len(p.Playback.Queue))
+	}
+	jam := NewParty("JAM002")
+	jam.Playback.SetQueue(nil, album, 0)
+	if len(jam.Playback.Queue) != 1+config.MaxUpcomingQueue {
+		t.Errorf("a jam keeps its own limit, got %d", len(jam.Playback.Queue))
+	}
+	if !p.Playback.Queue[5].FromContext {
+		t.Errorf("a track's section must survive the queue")
+	}
+}
+
+func TestTheClockFillsInAMissingDuration(t *testing.T) {
+	p := connectParty(t)
+	phone := join(t, p, "phone0001", "prod")
+	laptop := join(t, p, "laptop001", "prod")
+	p.Playback.SetTrack(&laptop.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
+	seq := p.Playback.Seq
+	if p.LearnDuration(laptop, "song", 200_000) {
+		t.Fatalf("only the device playing knows the length")
+	}
+	if !p.LearnDuration(phone, "song", 200_000) || *p.Playback.Track.DurationMs != 200_000 || p.Playback.Seq != seq+1 {
+		t.Fatalf("the clock's length must be taken and broadcast")
+	}
+	if p.LearnDuration(phone, "song", 199_000) {
+		t.Errorf("a known length is not overwritten")
+	}
+}
+
+func TestTrackFromWireKeepsItsSection(t *testing.T) {
+	tr := TrackFromWire(map[string]interface{}{"videoId": "a", "fromContext": true})
+	if tr == nil || !tr.FromContext {
+		t.Fatalf("fromContext must come through")
+	}
+}
+
+func TestVolumeIsTheOutputsToShare(t *testing.T) {
+	p := connectParty(t)
+	phone := join(t, p, "phone0001", "prod")
+	laptop := join(t, p, "laptop001", "prod")
+	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
+
+	if err := p.SetVolume(laptop, 0.5); err == nil {
+		t.Fatalf("a remote must not set a volume the output has not offered")
+	}
+	if err := p.VolumeState(laptop, 0.5, true, 15); err == nil {
+		t.Fatalf("only the output says what its volume is")
+	}
+	if err := p.VolumeState(phone, 0.4, true, 15); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SetVolume(laptop, 0.8); err != nil || *p.VolumeTarget != 0.8 || p.VolumeReqSeq != 1 {
+		t.Fatalf("an offered volume must be requestable from a remote: %v", err)
+	}
+	// The output's report of where it is must not overwrite the request.
+	_ = p.VolumeState(phone, 0.4, true, 15)
+	if *p.VolumeTarget != 0.8 || *p.Volume != 0.4 || p.VolumeReqSeq != 1 {
+		t.Fatalf("a report is not a request: target %v volume %v seq %d", *p.VolumeTarget, *p.Volume, p.VolumeReqSeq)
+	}
+	if err := p.SetVolume(laptop, 1.5); err == nil {
+		t.Errorf("out-of-range volume must be refused")
+	}
+	if wire := p.PlaybackToWire(clock.NowMs()); wire["volumeControl"] != true || wire["volumeSteps"] != 15 {
+		t.Errorf("the volume must travel on the state: %v", wire)
+	}
+
+	_ = p.VolumeState(phone, 0.4, false, 15)
+	if err := p.SetVolume(laptop, 0.9); err == nil {
+		t.Fatalf("an output that switched it off must refuse other devices")
+	}
+	if err := p.SetVolume(phone, 0.9); err != nil {
+		t.Errorf("the output can always set its own: %v", err)
+	}
+
+	_ = p.VolumeState(phone, 0.4, true, 15)
+	_ = p.Transfer(laptop.MemberId)
+	if p.Volume != nil || p.VolumeControl || p.VolumeTarget != nil {
+		t.Errorf("a new output's volume is unknown until it says")
+	}
+	if p.VolumeReqSeq == 0 {
+		t.Errorf("the request count must carry on across a transfer")
 	}
 }
