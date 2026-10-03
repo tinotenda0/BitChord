@@ -518,6 +518,14 @@ type Party struct {
 	Volume        *float64
 	VolumeControl bool
 	VolumeSteps   int
+	// VolumeTarget is the last volume another device asked for, and
+	// VolumeReqSeq counts those requests. Kept apart from Volume, which is only
+	// ever what the output reports: when they shared one field, a report of an
+	// older level landed after a newer request, overwrote it, and the output
+	// then applied its own stale report as if it had been asked to, and the
+	// volume bounced between the two for as long as anyone touched it.
+	VolumeTarget *float64
+	VolumeReqSeq int64
 	// PendingOutput is a device woken to take playback over: when it signs in
 	// before PendingUntilMs it is handed it, whatever is playing elsewhere.
 	PendingOutput  string
@@ -727,7 +735,8 @@ func (p *Party) SetVolume(member *Member, volume float64) error {
 	if p.ClockMember() != member && !(p.VolumeControl && p.Volume != nil) {
 		return NewPartyError(403, "volume_locked", "That device doesn’t let other devices change its volume.")
 	}
-	p.Volume = &volume
+	p.VolumeTarget = &volume
+	p.VolumeReqSeq++
 	return nil
 }
 
@@ -757,7 +766,9 @@ func (p *Party) setOutput(m *Member) {
 	m.Role = protocol.RoleSpeaker
 	p.LastReanchorMs = 0
 	// A different device, with its own volume, which it has not said yet.
-	p.Volume, p.VolumeControl = nil, false
+	// The request count carries on, so the new output can tell a request made
+	// before it arrived (which it ignores) from one made after.
+	p.Volume, p.VolumeControl, p.VolumeTarget = nil, false, nil
 }
 
 // Transfer moves a Connect party's playback to another of its devices.
@@ -935,6 +946,8 @@ func (p *Party) PlaybackToWire(serverMs int64) map[string]interface{} {
 		wire["volume"] = p.Volume
 		wire["volumeControl"] = p.VolumeControl && p.Volume != nil
 		wire["volumeSteps"] = p.VolumeSteps
+		wire["volumeTarget"] = p.VolumeTarget
+		wire["volumeReqSeq"] = p.VolumeReqSeq
 	}
 	if c := p.ClockMember(); c != nil {
 		wire["clockMemberId"] = c.MemberId

@@ -357,8 +357,13 @@ func TestVolumeIsTheOutputsToShare(t *testing.T) {
 	if err := p.VolumeState(phone, 0.4, true, 15); err != nil {
 		t.Fatal(err)
 	}
-	if err := p.SetVolume(laptop, 0.8); err != nil || *p.Volume != 0.8 {
-		t.Fatalf("an offered volume must be settable from a remote: %v", err)
+	if err := p.SetVolume(laptop, 0.8); err != nil || *p.VolumeTarget != 0.8 || p.VolumeReqSeq != 1 {
+		t.Fatalf("an offered volume must be requestable from a remote: %v", err)
+	}
+	// The output's report of where it is must not overwrite the request.
+	_ = p.VolumeState(phone, 0.4, true, 15)
+	if *p.VolumeTarget != 0.8 || *p.Volume != 0.4 || p.VolumeReqSeq != 1 {
+		t.Fatalf("a report is not a request: target %v volume %v seq %d", *p.VolumeTarget, *p.Volume, p.VolumeReqSeq)
 	}
 	if err := p.SetVolume(laptop, 1.5); err == nil {
 		t.Errorf("out-of-range volume must be refused")
@@ -377,7 +382,10 @@ func TestVolumeIsTheOutputsToShare(t *testing.T) {
 
 	_ = p.VolumeState(phone, 0.4, true, 15)
 	_ = p.Transfer(laptop.MemberId)
-	if p.Volume != nil || p.VolumeControl {
+	if p.Volume != nil || p.VolumeControl || p.VolumeTarget != nil {
 		t.Errorf("a new output's volume is unknown until it says")
+	}
+	if p.VolumeReqSeq == 0 {
+		t.Errorf("the request count must carry on across a transfer")
 	}
 }

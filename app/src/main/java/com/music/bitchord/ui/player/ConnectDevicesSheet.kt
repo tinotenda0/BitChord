@@ -21,7 +21,9 @@ import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material.icons.rounded.VolumeDown
 import androidx.compose.material.icons.rounded.VolumeUp
 import androidx.compose.material3.Slider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -299,6 +301,20 @@ private fun DeviceRow(
 private fun RemoteVolume(volume: Double, steps: Int) {
     var dragging by remember { mutableStateOf<Float?>(null) }
     var lastSentAt by remember { mutableStateOf(0L) }
+    // Where the finger let go, held until the output reports it has got there
+    // (or a moment passes), so the thumb does not jump back to the old level
+    // for the round trip.
+    var released by remember { mutableStateOf<Float?>(null) }
+    LaunchedEffect(released) {
+        if (released != null) {
+            delay(VOLUME_SETTLE_MS)
+            released = null
+        }
+    }
+    LaunchedEffect(volume) {
+        val held = released ?: return@LaunchedEffect
+        if (kotlin.math.abs(volume - held) <= 0.5 / steps.coerceAtLeast(1)) released = null
+    }
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -314,7 +330,7 @@ private fun RemoteVolume(volume: Double, steps: Int) {
             modifier = Modifier.size(20.dp),
         )
         Slider(
-            value = dragging ?: volume.toFloat(),
+            value = dragging ?: released ?: volume.toFloat(),
             onValueChange = { value ->
                 dragging = value
                 val now = android.os.SystemClock.elapsedRealtime()
@@ -324,7 +340,10 @@ private fun RemoteVolume(volume: Double, steps: Int) {
                 }
             },
             onValueChangeFinished = {
-                dragging?.let { ListenTogether.setVolume(it.toDouble()) }
+                dragging?.let {
+                    ListenTogether.setVolume(it.toDouble())
+                    released = it
+                }
                 dragging = null
             },
             steps = (steps - 1).coerceIn(0, 100),
@@ -342,3 +361,4 @@ private fun RemoteVolume(volume: Double, steps: Int) {
 }
 
 private const val VOLUME_SEND_MS = 120L
+private const val VOLUME_SETTLE_MS = 1_500L

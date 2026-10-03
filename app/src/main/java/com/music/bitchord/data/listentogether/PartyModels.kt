@@ -134,6 +134,13 @@ data class PartyPlayback(
     val volume: Double? = null,
     val volumeControl: Boolean = false,
     val volumeSteps: Int = 15,
+    /**
+     * The last volume another device asked for, and how many requests there
+     * have been. Apart from [volume], which is only what the output reports, so
+     * a report can never be mistaken for a request: see `ConnectVolume`.
+     */
+    val volumeTarget: Double? = null,
+    val volumeReqSeq: Long = 0,
 )
 
 /**

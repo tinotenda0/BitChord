@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -41,6 +40,13 @@ class ConnectVolume(private val context: Context, private val scope: CoroutineSc
     /** What was last said, so the observer's many unrelated wake-ups say nothing. */
     private var lastReported: Triple<Int, Boolean, Int>? = null
 
+    /**
+     * The last volume request acted on, or -1 when this device is not playing
+     * for the party. Requests are applied once each and in order, by number,
+     * and never confused with this device's own reports of where it is.
+     */
+    private var appliedRequest = -1L
+
     private val steps: Int get() = audio.getStreamMaxVolume(stream).coerceAtLeast(1)
     private val lowest: Int
         get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) audio.getStreamMinVolume(stream) else 0
@@ -61,26 +67,36 @@ class ConnectVolume(private val context: Context, private val scope: CoroutineSc
         job = scope.launch {
             combine(
                 ListenTogether.state
-                    .map { Triple(isOutput(it), it.playback.volume, it.connection == ListenTogether.Connection.LIVE) }
+                    .map {
+                        listOf(
+                            isOutput(it),
+                            it.connection == ListenTogether.Connection.LIVE,
+                            it.playback.volumeReqSeq,
+                            it.playback.volume == null,
+                            it.playback.volumeControl,
+                            it.playback.volumeSteps,
+                        )
+                    }
                     .distinctUntilChanged(),
                 ListenTogether.remoteVolumeAllowed,
-            ) { party, allowed -> party to allowed }
-                .collect { (party, allowed) ->
-                    val (output, wanted, live) = party
-                    if (!output || !live) {
+            ) { _, allowed -> allowed }
+                .collect { allowed ->
+                    val party = ListenTogether.state.value
+                    if (!isOutput(party) || party.connection != ListenTogether.Connection.LIVE) {
+                        appliedRequest = -1L
                         lastReported = null
                         return@collect
                     }
-                    val shared = ListenTogether.state.value.playback
-                    // Not said yet (a new output, or a server that has just
-                    // restarted), or said differently from how it is now.
-                    if (wanted == null || shared.volumeControl != allowed || shared.volumeSteps != steps) {
+                    val shared = party.playback
+                    val step = nextVolumeStep(appliedRequest, shared.volumeReqSeq, shared.volumeTarget, allowed)
+                    appliedRequest = step.applied
+                    // Not said yet, said differently from how it is now, or
+                    // just arrived: say where this device is.
+                    if (step.fresh || shared.volume == null || shared.volumeControl != allowed || shared.volumeSteps != steps) {
                         lastReported = null
                         report()
-                        return@collect
                     }
-                    // Another device asked for a level this device is not at.
-                    if (allowed && abs(wanted - current()) > 0.5 / steps) apply(wanted)
+                    step.target?.let(::apply)
                 }
         }
     }
@@ -115,4 +131,26 @@ class ConnectVolume(private val context: Context, private val scope: CoroutineSc
     private companion object {
         const val TAG = "ConnectVolume"
     }
+}
+
+/** What the output does with the party's volume request state. See [nextVolumeStep]. */
+internal data class VolumeStep(val applied: Long, val target: Double?, val fresh: Boolean)
+
+/**
+ * Which volume request, if any, the output should act on now.
+ *
+ * Requests are numbered and acted on once each. The output's own reports never
+ * appear here, which is the point: when reports and requests shared one value,
+ * a report of an older level overwrote a newer request and was then applied as
+ * though it were one, and the volume bounced between the two.
+ *
+ * [applied] below zero means the device has just become the output (or got back
+ * in touch): requests made before then were for another device, so they are
+ * taken as read rather than acted on. A count lower than [applied] is a server
+ * that restarted and began counting again, which is treated the same way.
+ */
+internal fun nextVolumeStep(applied: Long, reqSeq: Long, target: Double?, allowed: Boolean): VolumeStep = when {
+    applied < 0 || reqSeq < applied -> VolumeStep(reqSeq, null, fresh = true)
+    reqSeq > applied -> VolumeStep(reqSeq, target?.takeIf { allowed }, fresh = false)
+    else -> VolumeStep(applied, null, fresh = false)
 }
