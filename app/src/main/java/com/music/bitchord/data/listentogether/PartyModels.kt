@@ -125,6 +125,15 @@ data class PartyPlayback(
      * party the way every other speaker does. Null on a server that predates it.
      */
     val clockMemberId: String? = null,
+    /**
+     * Connect only: the output's volume, 0 to 1, or null while it is unknown.
+     * [volumeControl] says whether the output lets other devices change it,
+     * and [volumeSteps] how many steps it has. Not part of [seq]: it changes as
+     * a slider moves and is never a control anybody aligns to.
+     */
+    val volume: Double? = null,
+    val volumeControl: Boolean = false,
+    val volumeSteps: Int = 15,
 )
 
 /**

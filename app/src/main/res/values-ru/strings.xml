@@ -1354,4 +1354,6 @@
     <string name="connect_waking">Пробуждаем %1$s…</string>
     <string name="connect_push_hint">Чтобы отправлять музыку на устройство с закрытым приложением, установите на него ntfy и укажите сервер ntfy по умолчанию: %1$s.</string>
     <string name="connect_in_a_jam">В джеме</string>
+    <string name="connect_volume_setting">Разрешить моим устройствам менять эту громкость</string>
+    <string name="connect_volume_setting_subtitle">Когда играет это устройство, другие ваши устройства могут делать его громче или тише, в том числе кнопками громкости.</string>
 </resources>

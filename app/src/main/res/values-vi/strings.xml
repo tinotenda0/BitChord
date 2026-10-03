@@ -1248,4 +1248,6 @@
     <string name="connect_waking">Đang đánh thức %1$s…</string>
     <string name="connect_push_hint">Để gửi nhạc đến thiết bị đang đóng ứng dụng, hãy cài ntfy trên đó và đặt máy chủ mặc định của ntfy là %1$s.</string>
     <string name="connect_in_a_jam">Đang trong Jam</string>
+    <string name="connect_volume_setting">Cho thiết bị của tôi đổi âm lượng này</string>
+    <string name="connect_volume_setting_subtitle">Khi thiết bị này đang phát, các thiết bị khác của bạn có thể tăng hoặc giảm âm lượng, kể cả bằng nút âm lượng.</string>
 </resources>

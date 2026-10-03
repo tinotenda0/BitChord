@@ -1328,4 +1328,6 @@
     <string name="connect_waking">%1$s को जगाया जा रहा है…</string>
     <string name="connect_push_hint">जिस डिवाइस पर ऐप बंद है, उस पर संगीत भेजने के लिए उसमें ntfy इंस्टॉल करें और ntfy का डिफ़ॉल्ट सर्वर %1$s सेट करें।</string>
     <string name="connect_in_a_jam">जैम में</string>
+    <string name="connect_volume_setting">मेरे डिवाइस को यह वॉल्यूम बदलने दें</string>
+    <string name="connect_volume_setting_subtitle">जब यह डिवाइस चल रहा हो, आपके दूसरे डिवाइस इसकी आवाज़ बढ़ा या घटा सकते हैं, उनके वॉल्यूम बटन से भी।</string>
 </resources>

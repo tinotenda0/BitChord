@@ -1329,4 +1329,6 @@
     <string name="connect_waking">Réveil de %1$s…</string>
     <string name="connect_push_hint">Pour envoyer de la musique vers un appareil dont l’app est fermée, installez-y ntfy et réglez son serveur par défaut sur %1$s.</string>
     <string name="connect_in_a_jam">Dans une Jam</string>
+    <string name="connect_volume_setting">Autoriser mes appareils à régler ce volume</string>
+    <string name="connect_volume_setting_subtitle">Quand cet appareil lit de la musique, vos autres appareils peuvent monter ou baisser le son, y compris avec leurs boutons de volume.</string>
 </resources>

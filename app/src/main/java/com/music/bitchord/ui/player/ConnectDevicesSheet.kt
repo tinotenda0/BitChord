@@ -18,6 +18,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Speaker
+import androidx.compose.material.icons.rounded.VolumeDown
+import androidx.compose.material.icons.rounded.VolumeUp
+import androidx.compose.material3.Slider
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -147,6 +152,15 @@ internal fun ConnectDevicesSheet(
             }
         }
 
+        // The device playing, turned up or down from here. Only when this is
+        // not that device (its own buttons do that) and it allows it.
+        val playback = state.playback
+        val volume = playback.volume
+        if (state.isRemote && volume != null && playback.volumeControl) {
+            Spacer(Modifier.height(10.dp))
+            RemoteVolume(volume = volume, steps = playback.volumeSteps)
+        }
+
         Spacer(Modifier.height(10.dp))
         DeviceRow(
             icon = Icons.Rounded.Headphones,
@@ -274,3 +288,57 @@ private fun DeviceRow(
         }
     }
 }
+
+/**
+ * A slider for the output's volume. Follows the output while untouched, and
+ * the finger while dragged: sending every position would be dozens of controls
+ * a second, so a change goes out at most every [VOLUME_SEND_MS] and once more
+ * where the finger lets go.
+ */
+@Composable
+private fun RemoteVolume(volume: Double, steps: Int) {
+    var dragging by remember { mutableStateOf<Float?>(null) }
+    var lastSentAt by remember { mutableStateOf(0L) }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(ROW_SHAPE)
+            .background(Color.White.copy(alpha = 0.05f))
+            .padding(horizontal = 14.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.VolumeDown,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.7f),
+            modifier = Modifier.size(20.dp),
+        )
+        Slider(
+            value = dragging ?: volume.toFloat(),
+            onValueChange = { value ->
+                dragging = value
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (now - lastSentAt >= VOLUME_SEND_MS) {
+                    lastSentAt = now
+                    ListenTogether.setVolume(value.toDouble())
+                }
+            },
+            onValueChangeFinished = {
+                dragging?.let { ListenTogether.setVolume(it.toDouble()) }
+                dragging = null
+            },
+            steps = (steps - 1).coerceIn(0, 100),
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 8.dp),
+        )
+        Icon(
+            imageVector = Icons.Rounded.VolumeUp,
+            contentDescription = null,
+            tint = Color.White.copy(alpha = 0.7f),
+            modifier = Modifier.size(20.dp),
+        )
+    }
+}
+
+private const val VOLUME_SEND_MS = 120L

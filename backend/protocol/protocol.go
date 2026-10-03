@@ -47,7 +47,19 @@ const (
 	ActionTransfer = "transfer"
 	// ActionWake moves it to one that is asleep, by waking it with a push.
 	ActionWake = "wake"
+	// ActionSetVolume asks the Connect output to play at a volume, 0 to 1.
+	ActionSetVolume = "setVolume"
+	// ActionVolumeState is the output saying what its volume really is, and
+	// whether it lets the account's other devices change it.
+	ActionVolumeState = "volumeState"
 )
+
+// QuietActions change nothing anybody would want in the activity log: a
+// volume slider being dragged is dozens of them.
+var QuietActions = map[string]bool{
+	ActionSetVolume:   true,
+	ActionVolumeState: true,
+}
 
 // ControlActions are the actions a party's HostOnlyControl setting restricts to
 // the host. Membership actions are not here: kick and setMaxMembers are already

@@ -681,6 +681,7 @@ object ListenTogether {
         appContext = context.applicationContext
         _connectEnabled.value = prefs.getBoolean(KEY_CONNECT, true)
         _pushEndpoint.value = prefs.getString(KEY_PUSH_ENDPOINT, null)
+        _remoteVolumeAllowed.value = prefs.getBoolean(KEY_REMOTE_VOLUME, true)
         val code = prefs.getString(KEY_CODE, null)
         val saved = prefs.getString(KEY_TOKEN, null)
         prefs.edit().remove(KEY_CODE).remove(KEY_TOKEN).apply()
@@ -910,6 +911,20 @@ object ListenTogether {
         homeRetryAtMs = 0L
         homeFailures = 0
         ensureHome()
+    }
+
+    private val _remoteVolumeAllowed = MutableStateFlow(true)
+
+    /**
+     * Whether this device, while it is the one playing, lets the account's
+     * other devices change its volume. On by default, as Spotify does; off
+     * keeps the volume to whoever is holding this device.
+     */
+    val remoteVolumeAllowed: StateFlow<Boolean> = _remoteVolumeAllowed.asStateFlow()
+
+    fun setRemoteVolumeAllowed(allowed: Boolean) {
+        _remoteVolumeAllowed.value = allowed
+        prefs.edit().putBoolean(KEY_REMOTE_VOLUME, allowed).apply()
     }
 
     fun setConnectEnabled(enabled: Boolean) {
@@ -1367,6 +1382,16 @@ object ListenTogether {
     fun setMaxMembers(value: Int) = control("setMaxMembers") { put("maxMembers", value) }
 
     fun kick(memberId: String) = control("kick") { put("memberId", memberId) }
+
+    /** Connect only: ask the output to play at [volume], 0 to 1. */
+    fun setVolume(volume: Double) = control("setVolume") { put("volume", volume.coerceIn(0.0, 1.0)) }
+
+    /** Connect output only: what this device's volume really is, and whether it may be changed from elsewhere. */
+    fun reportVolume(volume: Double, control: Boolean, steps: Int) = control("volumeState") {
+        put("volume", volume.coerceIn(0.0, 1.0))
+        put("control", control)
+        put("steps", steps)
+    }
 
     /** Connect only: move playback to another of this account's devices. */
     fun transfer(memberId: String) = control("transfer") { put("memberId", memberId) }
@@ -2029,6 +2054,7 @@ object ListenTogether {
     private const val KEY_KICKED = "party_kicked_until"
     private const val KEY_CONNECT = "connect_enabled"
     private const val KEY_PUSH_ENDPOINT = "connect_push_endpoint"
+    private const val KEY_REMOTE_VOLUME = "connect_remote_volume"
 
     /** How long a removal keeps this device out of that party. */
     private const val KICK_BLOCK_MS = 24L * 60 * 60 * 1000

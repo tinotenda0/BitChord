@@ -676,6 +676,9 @@ class PlaybackService : MediaLibraryService() {
     /** Stands in for [localSessionPlayer] while this device is a party remote. */
     private var remotePlayer: PartyRemotePlayer? = null
 
+    /** Shares this device's volume with the account's other devices while it plays for them. */
+    private var connectVolume: ConnectVolume? = null
+
     /** The longest a remote stays in the session after this device takes playback. */
     private val HANDOVER_WAIT_MS = 8_000L
 
@@ -1569,6 +1572,7 @@ class PlaybackService : MediaLibraryService() {
         // After the player exists and before the session is built: the
         // session's wrapper reports the user's actions to it.
         partySync = PartySync(scope) { player }.also { it.start() }
+        connectVolume = ConnectVolume(this, scope).also { it.start() }
         // AutoPlay has one shared supplier in a party. The host supplies it
         // while connected; if they disappear, the lowest stable connected member
         // ID takes over. That election is deterministic on every phone, so two
@@ -6227,6 +6231,8 @@ class PlaybackService : MediaLibraryService() {
         partySync = null
         remotePlayer?.release()
         remotePlayer = null
+        connectVolume?.stop()
+        connectVolume = null
         player?.let(::savePlaybackState)
         // And to leave the widgets showing a play button. Nothing else reports a
         // swipe-away, so a widget left on the home screen would sit there with a

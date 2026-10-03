@@ -1314,4 +1314,6 @@
     <string name="connect_waking">กำลังปลุก %1$s…</string>
     <string name="connect_push_hint">หากต้องการส่งเพลงไปยังอุปกรณ์ที่ปิดแอปอยู่ ให้ติดตั้ง ntfy บนเครื่องนั้นและตั้งเซิร์ฟเวอร์เริ่มต้นของ ntfy เป็น %1$s</string>
     <string name="connect_in_a_jam">อยู่ใน Jam</string>
+    <string name="connect_volume_setting">ให้อุปกรณ์ของฉันเปลี่ยนระดับเสียงนี้ได้</string>
+    <string name="connect_volume_setting_subtitle">เมื่ออุปกรณ์นี้กำลังเล่น อุปกรณ์อื่นของคุณสามารถเพิ่มหรือลดเสียงได้ รวมถึงด้วยปุ่มปรับเสียง</string>
 </resources>

@@ -341,3 +341,43 @@ func TestTrackFromWireKeepsItsSection(t *testing.T) {
 		t.Fatalf("fromContext must come through")
 	}
 }
+
+func TestVolumeIsTheOutputsToShare(t *testing.T) {
+	p := connectParty(t)
+	phone := join(t, p, "phone0001", "prod")
+	laptop := join(t, p, "laptop001", "prod")
+	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
+
+	if err := p.SetVolume(laptop, 0.5); err == nil {
+		t.Fatalf("a remote must not set a volume the output has not offered")
+	}
+	if err := p.VolumeState(laptop, 0.5, true, 15); err == nil {
+		t.Fatalf("only the output says what its volume is")
+	}
+	if err := p.VolumeState(phone, 0.4, true, 15); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SetVolume(laptop, 0.8); err != nil || *p.Volume != 0.8 {
+		t.Fatalf("an offered volume must be settable from a remote: %v", err)
+	}
+	if err := p.SetVolume(laptop, 1.5); err == nil {
+		t.Errorf("out-of-range volume must be refused")
+	}
+	if wire := p.PlaybackToWire(clock.NowMs()); wire["volumeControl"] != true || wire["volumeSteps"] != 15 {
+		t.Errorf("the volume must travel on the state: %v", wire)
+	}
+
+	_ = p.VolumeState(phone, 0.4, false, 15)
+	if err := p.SetVolume(laptop, 0.9); err == nil {
+		t.Fatalf("an output that switched it off must refuse other devices")
+	}
+	if err := p.SetVolume(phone, 0.9); err != nil {
+		t.Errorf("the output can always set its own: %v", err)
+	}
+
+	_ = p.VolumeState(phone, 0.4, true, 15)
+	_ = p.Transfer(laptop.MemberId)
+	if p.Volume != nil || p.VolumeControl {
+		t.Errorf("a new output's volume is unknown until it says")
+	}
+}

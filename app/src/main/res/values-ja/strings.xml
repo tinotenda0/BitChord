@@ -1309,4 +1309,6 @@
     <string name="connect_waking">%1$s を起動しています…</string>
     <string name="connect_push_hint">アプリが閉じている端末に音楽を送るには、その端末に ntfy をインストールし、ntfy の既定のサーバーを %1$s に設定してください。</string>
     <string name="connect_in_a_jam">Jam に参加中</string>
+    <string name="connect_volume_setting">自分のデバイスからこの音量を変更できるようにする</string>
+    <string name="connect_volume_setting_subtitle">この端末で再生中、他のデバイスから音量を上げ下げできます。音量ボタンも使えます。</string>
 </resources>

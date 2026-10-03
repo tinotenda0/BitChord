@@ -511,6 +511,13 @@ type Party struct {
 	EmptySinceMs    *int64
 	// LastReanchorMs is when Reanchor last moved the party. See ReanchorCooldownMs.
 	LastReanchorMs int64
+	// Volume is the Connect output's volume, 0 to 1, or nil while unknown (no
+	// output, or a new one that has not said yet). VolumeControl is whether the
+	// output lets the account's other devices change it; VolumeSteps is how
+	// many steps its volume has, so a remote's buttons move it a step at a time.
+	Volume        *float64
+	VolumeControl bool
+	VolumeSteps   int
 	// PendingOutput is a device woken to take playback over: when it signs in
 	// before PendingUntilMs it is handed it, whatever is playing elsewhere.
 	PendingOutput  string
@@ -708,6 +715,37 @@ func (p *Party) JoinConnect(userId, deviceKey, app, deviceName, displayName stri
 
 // setOutput makes m the one device playing a Connect party. The output is the
 // host and so the clock; whoever held it becomes a remote.
+// SetVolume asks the output to play at volume. Refused when the output does not
+// let other devices change it, which is that device's owner's choice.
+func (p *Party) SetVolume(member *Member, volume float64) error {
+	if !p.IsConnect() {
+		return NewPartyError(409, "not_connect", "Volume can only be changed between your own devices.")
+	}
+	if volume < 0 || volume > 1 || volume != volume {
+		return NewPartyError(422, "invalid_volume", "Volume must be between 0 and 1.")
+	}
+	if p.ClockMember() != member && !(p.VolumeControl && p.Volume != nil) {
+		return NewPartyError(403, "volume_locked", "That device doesn’t let other devices change its volume.")
+	}
+	p.Volume = &volume
+	return nil
+}
+
+// VolumeState records what the output reports about its own volume.
+func (p *Party) VolumeState(member *Member, volume float64, control bool, steps int) error {
+	if !p.IsConnect() || p.ClockMember() != member {
+		return NewPartyError(403, "not_output", "Only the device playing can say what its volume is.")
+	}
+	if volume < 0 || volume > 1 || volume != volume {
+		return NewPartyError(422, "invalid_volume", "Volume must be between 0 and 1.")
+	}
+	if steps < 1 || steps > 1000 {
+		steps = 15
+	}
+	p.Volume, p.VolumeControl, p.VolumeSteps = &volume, control, steps
+	return nil
+}
+
 func (p *Party) setOutput(m *Member) {
 	for _, other := range p.Members {
 		if other != m && other.IsHost {
@@ -718,6 +756,8 @@ func (p *Party) setOutput(m *Member) {
 	m.IsHost = true
 	m.Role = protocol.RoleSpeaker
 	p.LastReanchorMs = 0
+	// A different device, with its own volume, which it has not said yet.
+	p.Volume, p.VolumeControl = nil, false
 }
 
 // Transfer moves a Connect party's playback to another of its devices.
@@ -887,6 +927,15 @@ func (p *Party) ClockMember() *Member {
 // clock member named so that member knows to report and not to correct.
 func (p *Party) PlaybackToWire(serverMs int64) map[string]interface{} {
 	wire := p.Playback.ToWire(serverMs)
+	if p.IsConnect() {
+		// On the state frame rather than the members frame: it is what a
+		// remote's slider and volume buttons follow, and it changes as often as
+		// somebody turns it. Not counted in seq, so moving it never reads to a
+		// device as a control to put itself on.
+		wire["volume"] = p.Volume
+		wire["volumeControl"] = p.VolumeControl && p.Volume != nil
+		wire["volumeSteps"] = p.VolumeSteps
+	}
 	if c := p.ClockMember(); c != nil {
 		wire["clockMemberId"] = c.MemberId
 	} else {

@@ -1366,4 +1366,6 @@
     <string name="connect_waking">Wybudzanie %1$s…</string>
     <string name="connect_push_hint">Aby wysyłać muzykę na urządzenie z zamkniętą aplikacją, zainstaluj na nim ntfy i ustaw domyślny serwer ntfy na %1$s.</string>
     <string name="connect_in_a_jam">W Jamie</string>
+    <string name="connect_volume_setting">Pozwól moim urządzeniom zmieniać tę głośność</string>
+    <string name="connect_volume_setting_subtitle">Gdy to urządzenie odtwarza, twoje inne urządzenia mogą je ściszać i pogłaśniać, także przyciskami głośności.</string>
 </resources>

@@ -1019,7 +1019,7 @@ func handleSocketFrame(p *party.Party, member *party.Member, sc *hub.SafeConn, f
 		action, _ := frame["action"].(string)
 		// One person's own devices: which of them did what is the first thing
 		// to look at when playback does something nobody asked for.
-		if p.IsConnect() {
+		if p.IsConnect() && !protocol.QuietActions[action] {
 			log.Printf("connect %s: %s (%s) sent %s", p.Code, member.DeviceName, member.App, action)
 		}
 		success, errCode, errMsg := applyControl(p, member, action, frame)
@@ -1040,7 +1040,9 @@ func handleSocketFrame(p *party.Party, member *party.Member, sc *hub.SafeConn, f
 				action == protocol.ActionSetHostOnlyControl {
 				hubInst.Broadcast(p.Code, membersFrame(p), "")
 			}
-			hubInst.Broadcast(p.Code, activityFrame(member, action, frame), "")
+			if !protocol.QuietActions[action] {
+				hubInst.Broadcast(p.Code, activityFrame(member, action, frame), "")
+			}
 		} else if errCode != "" {
 			_ = sc.WriteJSON(map[string]interface{}{
 				"type":    protocol.FrameError,
@@ -1261,6 +1263,33 @@ func applyControl(p *party.Party, member *party.Member, action string, frame map
 				})
 			}
 		}()
+		return true, "", ""
+
+	case protocol.ActionSetVolume:
+		v, ok := frame["volume"].(float64)
+		if !ok {
+			return false, "invalid_volume", "setVolume requires volume"
+		}
+		if err := p.SetVolume(member, v); err != nil {
+			pe := err.(*party.PartyError)
+			return false, pe.Code, pe.Message
+		}
+		return true, "", ""
+
+	case protocol.ActionVolumeState:
+		v, ok := frame["volume"].(float64)
+		if !ok {
+			return false, "invalid_volume", "volumeState requires volume"
+		}
+		control, _ := frame["control"].(bool)
+		steps := 15
+		if s, ok := frame["steps"].(float64); ok {
+			steps = int(s)
+		}
+		if err := p.VolumeState(member, v, control, steps); err != nil {
+			pe := err.(*party.PartyError)
+			return false, pe.Code, pe.Message
+		}
 		return true, "", ""
 
 	case protocol.ActionKick:
