@@ -14,6 +14,10 @@ services:
       # The proxy sets X-Forwarded-For; without this every client shares one
       # create-rate bucket.
       JAM_TRUST_PROXY: "true"
+      # Browsers allowed to talk to the server (CORS and the WebSocket origin
+      # check). Native apps send no Origin and aren't affected. The web player
+      # at music.tinotenda.co joins its account's devices here, as a phone does.
+      JAM_ALLOWED_ORIGINS: "https://music.tinotenda.co"
       JAM_MAX_MEMBERS: "5"
       JAM_MAX_REMOTES: "5"
       JAM_MAX_PARTIES: "50"

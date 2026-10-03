@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"testing"
 	"time"
 
+	"github.com/KabirSinghBhatia/BitChord/backend/config"
 	"github.com/KabirSinghBhatia/BitChord/backend/gateway"
 	"github.com/KabirSinghBhatia/BitChord/backend/protocol"
+	"github.com/gorilla/websocket"
 )
 
 // fakeGateway accepts tino/secret with Subsonic token auth, as the real one does.
@@ -112,5 +115,52 @@ func TestConnectAccountDevicesFindEachOther(t *testing.T) {
 	status, again := postJSON(t, ts.URL+"/api/connect", connectBody("tino", "secret", "phone0001", "prod"))
 	if status != http.StatusOK || again["you"].(map[string]interface{})["memberId"] != phone["you"].(map[string]interface{})["memberId"] {
 		t.Fatalf("the same device must come back as the same member")
+	}
+}
+
+// A browser can't set an Authorization header on a WebSocket, so it offers its
+// token as a subprotocol; the server must accept it, answer with the plain
+// "bitchord" protocol (never the one holding the token), and still refuse an
+// origin it hasn't been told about.
+func TestBrowserJoinsWithItsTokenInTheSubprotocol(t *testing.T) {
+	ts := setupTestServer()
+	defer ts.Close()
+	fakeGateway(t)
+	saved := config.AllowedOrigins
+	config.AllowedOrigins = []string{"https://music.example"}
+	t.Cleanup(func() { config.AllowedOrigins = saved })
+
+	status, web := postJSON(t, ts.URL+"/api/connect", connectBody("tino", "secret", "browser0001", "web"))
+	if status != http.StatusOK {
+		t.Fatalf("connect failed: %d %v", status, web)
+	}
+	u, _ := url.Parse(ts.URL)
+	u.Scheme = "ws"
+	u.Path = "/ws/parties/" + web["code"].(string)
+	dial := func(origin string, protocols ...string) (*websocket.Conn, *http.Response, error) {
+		d := websocket.Dialer{Subprotocols: protocols}
+		h := http.Header{}
+		h.Set("Origin", origin)
+		return d.Dial(u.String(), h)
+	}
+
+	ws, resp, err := dial("https://music.example", "bitchord", "bitchord.token."+web["token"].(string))
+	if err != nil {
+		t.Fatalf("a browser offering its token as a subprotocol must get in: %v", err)
+	}
+	defer ws.Close()
+	if got := resp.Header.Get("Sec-WebSocket-Protocol"); got != "bitchord" {
+		t.Fatalf("the server must answer with the plain protocol, not the token; got %q", got)
+	}
+	welcome := nextFrame(t, ws, protocol.FrameWelcome)
+	if welcome["you"].(map[string]interface{})["memberId"] != web["you"].(map[string]interface{})["memberId"] {
+		t.Fatalf("the socket must belong to the member that signed in")
+	}
+
+	if _, resp, err := dial("https://music.example", "bitchord", "bitchord.token.wrong"); err == nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("a wrong token must be refused with 401")
+	}
+	if _, resp, err := dial("https://elsewhere.example", "bitchord", "bitchord.token."+web["token"].(string)); err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("an origin that isn't allowed must be refused")
 	}
 }
