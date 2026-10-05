@@ -465,6 +465,7 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 	youWire := m.ToWire()
 	token := m.Token
 	code := p.Code
+	log.Printf("connect %s: %s (%s) signed in as %s, host=%v, playing=%v", p.Code, m.DeviceName, m.App, m.Role, m.IsHost, req.Playing)
 	// Joining can move the output, which every device already here must hear.
 	mFrame := membersFrame(p)
 	sFrame := stateFrame(p)
@@ -966,6 +967,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	for {
 		var raw map[string]interface{}
 		if err := conn.ReadJSON(&raw); err != nil {
+			// Otherwise silent: the device only sees its socket drop, and
+			// whatever it sent is simply gone.
+			if errors.Is(err, websocket.ErrReadLimit) {
+				log.Printf("party %s: %s sent a frame over %d bytes, closing", p.Code, member.DeviceName, config.WebSocketMaxBytes)
+			} else if p.IsConnect() {
+				log.Printf("connect %s: %s (%s) socket closed: %v", p.Code, member.DeviceName, member.App, err)
+			}
 			break
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(time.Duration(config.ConnectionIdleMs) * time.Millisecond))

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -115,6 +116,47 @@ func TestConnectAccountDevicesFindEachOther(t *testing.T) {
 	status, again := postJSON(t, ts.URL+"/api/connect", connectBody("tino", "secret", "phone0001", "prod"))
 	if status != http.StatusOK || again["you"].(map[string]interface{})["memberId"] != phone["you"].(map[string]interface{})["memberId"] {
 		t.Fatalf("the same device must come back as the same member")
+	}
+}
+
+// A playlist of a hundred-odd songs, each with a title, an artist and a cover
+// URL, is far past the 16 KiB a frame used to be allowed. It must arrive whole
+// rather than get the socket closed.
+func TestAPlaylistSizedQueueArrives(t *testing.T) {
+	ts := setupTestServer()
+	defer ts.Close()
+	fakeGateway(t)
+
+	status, phone := postJSON(t, ts.URL+"/api/connect", connectBody("tino", "secret", "phone0001", "prod"))
+	if status != http.StatusOK {
+		t.Fatalf("connect failed: %d %v", status, phone)
+	}
+	ws := dialParty(t, ts.URL, phone["code"].(string), phone["token"].(string))
+	defer ws.Close()
+	nextFrame(t, ws, protocol.FrameWelcome)
+
+	queue := make([]map[string]interface{}, 110)
+	for i := range queue {
+		queue[i] = map[string]interface{}{
+			"videoId":      fmt.Sprintf("video%06d", i),
+			"title":        fmt.Sprintf("A Fairly Ordinary Song Title, Number %d (Remastered 2011)", i),
+			"artist":       "Some Artist, Another Artist, A Third Artist",
+			"thumbnailUrl": "https://lh3.googleusercontent.com/" + strings.Repeat("x", 180) + "=w544-h544-l90-rj",
+			"durationMs":   215000,
+			"fromContext":  true,
+		}
+	}
+	_ = ws.WriteJSON(map[string]interface{}{
+		"type": protocol.FrameControl, "action": protocol.ActionSetQueue,
+		"queue": queue, "queueIndex": 0,
+	})
+	got := nextFrame(t, ws, protocol.FrameQueue)
+	items, _ := got["queue"].(map[string]interface{})["items"].([]interface{})
+	if items == nil {
+		items, _ = got["items"].([]interface{})
+	}
+	if len(items) != 110 {
+		t.Fatalf("the whole playlist must be the party's queue, got %d items in %v", len(items), got["type"])
 	}
 }
 
