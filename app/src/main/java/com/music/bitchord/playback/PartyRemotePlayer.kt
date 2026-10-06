@@ -353,8 +353,12 @@ internal fun remotePlaylist(party: ListenTogether.State): List<PartyTrack> {
     val queue = party.queue.items
     if (queue.none { it.videoId == current.videoId }) return listOf(current)
     return queue.map { entry ->
-        if (entry.videoId == current.videoId && entry.durationMs == null && current.durationMs != null) {
-            entry.copy(durationMs = current.durationMs)
+        if (entry.videoId == current.videoId) {
+            // Fork: the cover too, which the queue's copy can lack the same way.
+            entry.copy(
+                durationMs = entry.durationMs ?: current.durationMs,
+                thumbnailUrl = entry.thumbnailUrl ?: current.thumbnailUrl,
+            )
         } else {
             entry
         }

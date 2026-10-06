@@ -2341,6 +2341,9 @@ internal fun Badge(text: String) {
         text = text.uppercase(Locale.ROOT),
         style = MaterialTheme.typography.labelSmall,
         color = MaterialTheme.colorScheme.primary,
+        // A badge is a word: at a large font size it must not break letter by letter.
+        maxLines = 1,
+        softWrap = false,
         modifier = Modifier
             .clip(RoundedCornerShape(5.dp))
             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f))
