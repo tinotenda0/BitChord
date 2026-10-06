@@ -1086,6 +1086,8 @@ private fun MemberRow(member: PartyMember, isYou: Boolean, canKick: Boolean = fa
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    // The name gives way to the badges, not the other way round.
+                    modifier = Modifier.weight(1f, fill = false),
                 )
                 if (isYou) {
                     Spacer(Modifier.width(8.dp))

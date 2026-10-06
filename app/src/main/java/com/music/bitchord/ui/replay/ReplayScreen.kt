@@ -319,6 +319,8 @@ private fun PeriodPicker(selected: ReplayPeriod, onSelect: (ReplayPeriod) -> Uni
                 text = period.localizedChip(context),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.W700,
+                maxLines = 1,
+                softWrap = false,
                 color = if (active) if (dark) Color.Black else Color.White else textColor.copy(alpha = 0.75f),
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
