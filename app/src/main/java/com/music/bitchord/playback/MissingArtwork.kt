@@ -61,5 +61,12 @@ object MissingArtwork {
         return found[song.videoId]?.let { song.copy(thumbnailUrl = it) } ?: song
     }
 
+    /**
+     * Whether [url] names a file on whichever device made it — a download's saved
+     * cover, a local track's embedded art — rather than something any device can
+     * fetch. Such a cover is only good on the device it came from.
+     */
+    fun isOnDevice(url: String): Boolean = url.startsWith("file:") || url.startsWith("content:")
+
     private const val YOUTUBE_ID_LENGTH = 11
 }

@@ -133,7 +133,13 @@ class PartyRemotePlayer(
             tracks = source
             playlist = source.mapIndexed { i, track ->
                 MediaItemData.Builder("$i:${track.videoId}")
-                    .setMediaItem(track.toSong().toMediaItem())
+                    // Fork: a cover that is a file on the playing device (one on an
+                    // older build) can't be opened here; dropped, it is looked up.
+                    .setMediaItem(
+                        track.copy(thumbnailUrl = track.thumbnailUrl?.takeUnless(MissingArtwork::isOnDevice))
+                            .toSong()
+                            .toMediaItem(),
+                    )
                     .setDurationUs(track.durationMs?.let { it * 1000 } ?: C.TIME_UNSET)
                     .setIsSeekable(true)
                     .build()
