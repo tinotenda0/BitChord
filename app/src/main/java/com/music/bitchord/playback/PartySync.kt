@@ -1202,7 +1202,10 @@ internal fun Song.toPartyTrack(playerDurationMs: Long): PartyTrack = PartyTrack(
     videoId = videoId,
     title = title,
     artist = artist,
-    thumbnailUrl = thumbnailUrl,
+    // Fork: a download's or a local file's cover is a file on this device, which
+    // no other device in the party can open; sent as nothing, the others look up
+    // the track's own cover instead (see MissingArtwork).
+    thumbnailUrl = thumbnailUrl?.takeUnless(MissingArtwork::isOnDevice),
     // The player's own figure when it has one, since it comes from the decoder;
     // otherwise what the row that queued the track claimed.
     durationMs = playerDurationMs.takeIf { it > 0L }
