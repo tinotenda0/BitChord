@@ -971,13 +971,12 @@ class PartySync(
      * without a word.
      */
     private fun seedEmptyParty(party: ListenTogether.State) {
-        if (party.connection != ListenTogether.Connection.LIVE) return
-        if (party.you?.isHost != true) return
         val exo = player() ?: return
         // The same two things [publish] would refuse to say anything about: an
         // empty player, and a file that only exists on this phone.
         val song = exo.currentMediaItem?.toSong() ?: return
         if (song.isDeviceFile()) return
+        if (!shouldSeedEmptyParty(party, playing = deferredPlayPending || exo.playWhenReady)) return
         Log.i(TAG, "seeding the new party with what this device is already playing")
         // The rest of the album or playlist stays: it is what this device was
         // going to play next, and now so is the party.
@@ -1280,6 +1279,22 @@ internal fun mayFollow(party: ListenTogether.State): Boolean =
  * doing rather than be told. Only the device whose playback is the party's (the
  * clock, or Connect's output) and only when it actually moved on while away.
  */
+/**
+ * Whether this device fills an empty party with what its own player holds.
+ *
+ * A jam is created on purpose, by somebody with the song they mean to share
+ * loaded, so its host seeds it playing or not. Connect is joined by every
+ * signed-in device on its own, and an idle one holds whatever it was left on:
+ * a tablet at home that happened to sign in first after the server restarted
+ * pushed its paused, hours-old queue over the phone that was out playing. So in
+ * Connect only a device that is actually playing may seed.
+ */
+internal fun shouldSeedEmptyParty(party: ListenTogether.State, playing: Boolean): Boolean {
+    if (party.connection != ListenTogether.Connection.LIVE) return false
+    if (party.you?.isHost != true || party.playback.track != null) return false
+    return playing || !party.isConnect
+}
+
 internal fun shouldCatchUpOnReconnect(
     party: ListenTogether.State,
     localTrackId: String?,
