@@ -1670,6 +1670,12 @@ class PlaybackService : MediaLibraryService() {
                         val stand = PartyRemotePlayer(scope)
                         remotePlayer = stand
                         session.player = stand
+                        stand.addListener(object : Player.Listener {
+                            override fun onEvents(player: Player, events: Player.Events) {
+                                if (remotePlayer === stand) publishWidgetState()
+                            }
+                        })
+                        publishWidgetState()
                     } else if (!remote) {
                         val stand = remotePlayer ?: return@collect
                         // Becoming the device that plays. The remote stays in the
@@ -1692,6 +1698,7 @@ class PlaybackService : MediaLibraryService() {
                         remotePlayer = null
                         localSessionPlayer?.let { session.player = it }
                         stand.release()
+                        publishWidgetState()
                     }
                     refreshCustomLayouts()
                 }
@@ -5050,7 +5057,14 @@ class PlaybackService : MediaLibraryService() {
      * play right up to the moment it is released.
      */
     private fun publishWidgetState(playing: Boolean? = null) {
-        val exoPlayer = player ?: return
+        // A party remote shows the party, like the notification does: this
+        // device's own player is parked on whatever it last played itself, and
+        // the widget sat on that while the music moved on somewhere else. The
+        // [playing] hint comes from the local player's callback, so it means
+        // nothing then.
+        val remote = remotePlayer
+        val exoPlayer: Player = remote ?: player ?: return
+        val hint = if (remote == null) playing else null
         val song = exoPlayer.currentMediaItem?.toSong() ?: return
         // LikeState only knows ratings this process has seen: a fresh service
         // started from the widget or a restart has none until something seeds
@@ -5067,7 +5081,7 @@ class PlaybackService : MediaLibraryService() {
                 artist = song.artist,
                 artworkUrl = song.thumbnailUrl,
                 // playWhenReady, not isPlaying — see MediaWidgetSnapshot.isPlaying.
-                isPlaying = playing ?: exoPlayer.playWhenReady,
+                isPlaying = hint ?: exoPlayer.playWhenReady,
                 hasPrevious = exoPlayer.hasPreviousMediaItem(),
                 hasNext = exoPlayer.hasNextMediaItem(),
                 isLiked = liked,
