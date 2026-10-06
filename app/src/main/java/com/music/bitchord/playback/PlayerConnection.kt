@@ -283,7 +283,7 @@ fun rememberPlayerState(controller: MediaController?): PlayerState {
             val item = player.currentMediaItem
             if (rebuildQueue) {
                 queueSnapshot = (0 until player.mediaItemCount)
-                    .map { player.getMediaItemAt(it).toSong() }
+                    .map { MissingArtwork.cached(player.getMediaItemAt(it).toSong()) }
             } else if (refreshCurrentQueueItem && item != null) {
                 val index = player.currentMediaItemIndex
                 if (index in queueSnapshot.indices) {
@@ -294,7 +294,8 @@ fun rememberPlayerState(controller: MediaController?): PlayerState {
             // the scrubber (the poll loop only runs on play).
             position.positionMs = player.currentPosition.coerceAtLeast(0L)
             state = state.copy(
-                song = item?.toSong(),
+                // Fork: a track that arrived without a cover gets one looked up.
+                song = item?.toSong()?.let(MissingArtwork::fill),
                 isPlaying = player.isPlaying,
                 durationMs = player.duration.coerceAtLeast(0L),
                 error = error,
@@ -332,6 +333,16 @@ fun rememberPlayerState(controller: MediaController?): PlayerState {
         player.addListener(listener)
         sync(rebuildQueue = true)
         onDispose { player.removeListener(listener) }
+    }
+
+    // Fork: a cover found for a track that had none is drawn as soon as it lands.
+    LaunchedEffect(Unit) {
+        MissingArtwork.revision.collect {
+            state = state.copy(
+                song = state.song?.let(MissingArtwork::cached),
+                queue = state.queue.map(MissingArtwork::cached),
+            )
+        }
     }
 
     // Only while the app is on screen. The poll exists to move a scrubber, and

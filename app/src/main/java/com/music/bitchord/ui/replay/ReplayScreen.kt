@@ -274,9 +274,14 @@ private fun Heading(state: ReplayState, onPeriodChange: (ReplayPeriod) -> Unit, 
         )
         Spacer(Modifier.height(14.dp))
         // Fork: the period on the left, minutes-or-hours on the right.
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        // Wraps onto its own line rather than squeezing the switch to a letter
+        // wide when a large font size makes the period picker fill the row.
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        androidx.compose.foundation.layout.FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             PeriodPicker(state.period, onPeriodChange, dark)
-            Spacer(Modifier.weight(1f))
             val unit by ReplayUnits.unit.collectAsStateWithLifecycle()
             UnitPicker(unit, ReplayUnits::set, dark)
         }
@@ -349,6 +354,8 @@ private fun UnitPicker(selected: ReplayUnits.Unit, onSelect: (ReplayUnits.Unit) 
                 ),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.W700,
+                maxLines = 1,
+                softWrap = false,
                 color = if (active) if (dark) Color.Black else Color.White else textColor.copy(alpha = 0.75f),
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
