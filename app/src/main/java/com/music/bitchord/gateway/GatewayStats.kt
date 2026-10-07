@@ -81,6 +81,21 @@ object GatewayStats {
         fetchedAt = 0L
     }
 
+    /**
+     * Drops everything held and fetches the whole log again on the next read. For a change
+     * the usual top-up can't see: it only asks for events that ended in the last day, and an
+     * import (or its undo) adds or removes listens from years ago.
+     */
+    suspend fun forgetAll() = lock.withLock {
+        withContext(Dispatchers.IO) {
+            events = null
+            fetchedAt = 0L
+            memo = null
+            version++
+            if (this@GatewayStats::cacheFile.isInitialized) cacheFile.delete()
+        }
+    }
+
     /** The Replay for [period]: from the gateway when signed in, from this device otherwise. */
     suspend fun replaySummary(period: ReplayPeriod): ReplaySummary =
         if (Gateway.signedIn) summary(period) else ListeningStats.summary(period)

@@ -39,6 +39,32 @@
     <string name="widget_stats_description">This month\'s listening, top artist and top song</string>
     <string name="widget_stats_top_artist">Top artist · %1$s</string>
     <string name="widget_stats_nothing_yet">Nothing played yet this month</string>
+    <string name="spotify_import">Import Spotify history</string>
+    <string name="spotify_import_subtitle">From Spotify\'s Download your data export: the zip, or the JSON files in it</string>
+    <string name="spotify_import_reading">Reading the export…</string>
+    <string name="spotify_import_matching">Matching songs: %1$d of %2$d · keep BitChord open</string>
+    <string name="spotify_import_uploading">Adding listens: %1$d of %2$d</string>
+    <plurals name="spotify_import_added">
+        <item quantity="one">Added %1$s listen</item>
+        <item quantity="other">Added %1$s listens</item>
+    </plurals>
+    <plurals name="spotify_import_already">
+        <item quantity="one">%1$s was already in</item>
+        <item quantity="other">%1$s were already in</item>
+    </plurals>
+    <plurals name="spotify_import_unmatched">
+        <item quantity="one">%1$s song not found</item>
+        <item quantity="other">%1$s songs not found</item>
+    </plurals>
+    <plurals name="spotify_imported">
+        <item quantity="one">%1$s play imported, from %2$s</item>
+        <item quantity="other">%1$s plays imported, from %2$s</item>
+    </plurals>
+    <string name="spotify_remove">Remove imported Spotify history</string>
+    <plurals name="spotify_remove_confirm">
+        <item quantity="one">Tap again to remove %1$s play</item>
+        <item quantity="other">Tap again to remove %1$s plays</item>
+    </plurals>
     <string name="share_lyrics">Share lyrics</string>
     <string name="share_lyrics_description">Pick up to %1$d lines for the card.</string>
     <string name="share_lyrics_pick">Pick a line</string>

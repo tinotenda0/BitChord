@@ -1,6 +1,15 @@
 package com.music.bitchord.gateway
 
 import androidx.compose.foundation.layout.Column
+import kotlinx.coroutines.delay
+import java.time.ZoneId
+import java.time.Instant
+import com.music.bitchord.ui.replay.grouped
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material.icons.rounded.History
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -80,14 +89,109 @@ internal fun GatewaySettingsGroup(youtubeSignedIn: Boolean, onSignIn: () -> Unit
                 enabled = youtubeSignedIn && move !is PixelPlayerPlaylists.State.Moving,
                 onClick = PixelPlayerPlaylists::start,
             )
+            RowDivider()
+            SpotifyImportRow()
         }
     }
     if (username.isNotEmpty()) {
+        SpotifyRemoveGroup()
         SettingsGroup {
             DestructiveRow(label = stringResource(R.string.gateway_sign_out), onClick = Gateway::signOut)
         }
     }
 }
+
+/** Picks a Spotify export and imports it — see [SpotifyImport]. */
+@Composable
+private fun SpotifyImportRow() {
+    val context = LocalContext.current
+    val state by SpotifyImport.state.collectAsStateWithLifecycle()
+    val imported by SpotifyImport.imported.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { SpotifyImport.refreshImported() }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { SpotifyImport.start(context, it) }
+    }
+    SettingsRow(
+        icon = Icons.Rounded.History,
+        title = stringResource(R.string.spotify_import),
+        subtitle = when (val s = state) {
+            SpotifyImport.State.Reading -> stringResource(R.string.spotify_import_reading)
+            is SpotifyImport.State.Matching -> stringResource(R.string.spotify_import_matching, s.done, s.total)
+            is SpotifyImport.State.Uploading -> stringResource(R.string.spotify_import_uploading, s.done, s.total)
+            is SpotifyImport.State.Finished -> finishedText(s)
+            is SpotifyImport.State.Failed -> s.message
+            SpotifyImport.State.Idle -> imported?.takeIf { it.plays > 0 }?.let { importedText(it) }
+                ?: stringResource(R.string.spotify_import_subtitle)
+        },
+        enabled = state.let { it !is SpotifyImport.State.Reading && it !is SpotifyImport.State.Matching &&
+            it !is SpotifyImport.State.Uploading },
+        // A zip as Spotify sends it, or the JSON files out of it; some file managers
+        // report either as a generic binary.
+        onClick = { pick.launch(arrayOf("application/zip", "application/json", "application/octet-stream")) },
+    )
+}
+
+/**
+ * Undoing an import. Two taps, the first turning the row into the question, since
+ * it takes away years of listening from the Replay in one go.
+ */
+@Composable
+private fun SpotifyRemoveGroup() {
+    val context = LocalContext.current
+    val state by SpotifyImport.state.collectAsStateWithLifecycle()
+    val imported by SpotifyImport.imported.collectAsStateWithLifecycle()
+    val plays = imported?.plays ?: 0
+    if (plays == 0 || state.let { it is SpotifyImport.State.Matching || it is SpotifyImport.State.Uploading }) return
+    var armed by remember { mutableStateOf(false) }
+    LaunchedEffect(armed) {
+        if (armed) {
+            delay(CONFIRM_WINDOW_MS)
+            armed = false
+        }
+    }
+    SettingsGroup {
+        DestructiveRow(
+            label = if (armed) {
+                pluralStringResource(R.plurals.spotify_remove_confirm, plays, grouped(plays.toLong()))
+            } else {
+                stringResource(R.string.spotify_remove)
+            },
+            onClick = {
+                if (armed) {
+                    armed = false
+                    SpotifyImport.remove(context)
+                } else {
+                    armed = true
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun finishedText(state: SpotifyImport.State.Finished): String {
+    val parts = buildList {
+        add(pluralStringResource(R.plurals.spotify_import_added, state.added, grouped(state.added.toLong())))
+        if (state.already > 0) {
+            add(pluralStringResource(R.plurals.spotify_import_already, state.already, grouped(state.already.toLong())))
+        }
+        if (state.unmatched > 0) {
+            add(pluralStringResource(R.plurals.spotify_import_unmatched, state.unmatched, grouped(state.unmatched.toLong())))
+        }
+    }
+    return parts.joinToString(" · ")
+}
+
+@Composable
+private fun importedText(imported: SpotifyImport.Imported): String {
+    val zone = ZoneId.systemDefault()
+    val from = Instant.ofEpochMilli(imported.fromMs).atZone(zone).year
+    val to = Instant.ofEpochMilli(imported.toMs).atZone(zone).year
+    val span = if (from == to) "$from" else "$from–$to"
+    return pluralStringResource(R.plurals.spotify_imported, imported.plays, grouped(imported.plays.toLong()), span)
+}
+
+private const val CONFIRM_WINDOW_MS = 4_000L
 
 @Composable
 private fun finishedText(state: PixelPlayerPlaylists.State.Finished): String = when {
