@@ -72,4 +72,23 @@ class PartyReconnectTest {
         assertFalse(shouldCatchUpOnReconnect(state(track = null), "next-song", true))
         assertFalse(shouldCatchUpOnReconnect(state(), localTrackId = null, localPlaying = true))
     }
+
+    @Test
+    fun `an idle device never fills an empty Connect party`() {
+        val empty = state(kind = KIND_CONNECT, clock = null, track = null, playing = false)
+        assertFalse(shouldSeedEmptyParty(empty, playing = false))
+        assertTrue(shouldSeedEmptyParty(empty, playing = true))
+    }
+
+    @Test
+    fun `a jam host seeds what it has loaded, playing or not`() {
+        assertTrue(shouldSeedEmptyParty(state(track = null, playing = false), playing = false))
+    }
+
+    @Test
+    fun `nobody seeds a party that has music, or before hearing from it, or as a guest`() {
+        assertFalse(shouldSeedEmptyParty(state(kind = KIND_CONNECT), playing = true))
+        assertFalse(shouldSeedEmptyParty(state(track = null, connection = Connection.CONNECTING), playing = true))
+        assertFalse(shouldSeedEmptyParty(state(track = null, you = me.copy(isHost = false)), playing = true))
+    }
 }

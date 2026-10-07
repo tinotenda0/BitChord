@@ -41,6 +41,9 @@ var (
 			origin := r.Header.Get("Origin")
 			return origin == "" || config.IsAllowedOrigin(origin)
 		},
+		// Answered to a browser that offers it (see tokenFromSubprotocol), so the
+		// handshake completes without echoing the token-bearing protocol back.
+		Subprotocols: []string{wsSubprotocol},
 	}
 )
 
@@ -193,6 +196,29 @@ func jsonError(w http.ResponseWriter, status int, errCode, msg string) {
 		"error":   errCode,
 		"message": msg,
 	})
+}
+
+// wsSubprotocol is the WebSocket subprotocol a browser offers alongside its
+// token, and the one the server answers with.
+const wsSubprotocol = "bitchord"
+
+// wsTokenPrefix marks the offered subprotocol that carries a member token.
+const wsTokenPrefix = "bitchord.token."
+
+// tokenFromSubprotocol reads a member token from the WebSocket subprotocols a
+// browser offered, for the browser's sake: a page cannot set an Authorization
+// header on a WebSocket, and a token in the URL would be written into proxy and
+// server logs. The browser offers ["bitchord", "bitchord.token.<token>"]; the
+// server picks "bitchord", so the token never comes back in the response.
+//
+// Native clients keep sending Authorization, which wins when both are present.
+func tokenFromSubprotocol(r *http.Request) string {
+	for _, p := range websocket.Subprotocols(r) {
+		if strings.HasPrefix(p, wsTokenPrefix) {
+			return strings.TrimPrefix(p, wsTokenPrefix)
+		}
+	}
+	return ""
 }
 
 func parseBearerToken(r *http.Request) string {
@@ -439,6 +465,7 @@ func handleConnect(w http.ResponseWriter, r *http.Request) {
 	youWire := m.ToWire()
 	token := m.Token
 	code := p.Code
+	log.Printf("connect %s: %s (%s) signed in as %s, host=%v, playing=%v", p.Code, m.DeviceName, m.App, m.Role, m.IsHost, req.Playing)
 	// Joining can move the output, which every device already here must hear.
 	mFrame := membersFrame(p)
 	sFrame := stateFrame(p)
@@ -874,6 +901,9 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	code := r.PathValue("code")
 	token := parseBearerToken(r)
 	if token == "" {
+		token = tokenFromSubprotocol(r)
+	}
+	if token == "" {
 		http.Error(w, "missing token", http.StatusUnauthorized)
 		return
 	}
@@ -937,6 +967,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	for {
 		var raw map[string]interface{}
 		if err := conn.ReadJSON(&raw); err != nil {
+			// Otherwise silent: the device only sees its socket drop, and
+			// whatever it sent is simply gone.
+			if errors.Is(err, websocket.ErrReadLimit) {
+				log.Printf("party %s: %s sent a frame over %d bytes, closing", p.Code, member.DeviceName, config.WebSocketMaxBytes)
+			} else if p.IsConnect() {
+				log.Printf("connect %s: %s (%s) socket closed: %v", p.Code, member.DeviceName, member.App, err)
+			}
 			break
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(time.Duration(config.ConnectionIdleMs) * time.Millisecond))

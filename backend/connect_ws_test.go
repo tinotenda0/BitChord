@@ -6,11 +6,15 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/KabirSinghBhatia/BitChord/backend/config"
 	"github.com/KabirSinghBhatia/BitChord/backend/gateway"
 	"github.com/KabirSinghBhatia/BitChord/backend/protocol"
+	"github.com/gorilla/websocket"
 )
 
 // fakeGateway accepts tino/secret with Subsonic token auth, as the real one does.
@@ -112,5 +116,93 @@ func TestConnectAccountDevicesFindEachOther(t *testing.T) {
 	status, again := postJSON(t, ts.URL+"/api/connect", connectBody("tino", "secret", "phone0001", "prod"))
 	if status != http.StatusOK || again["you"].(map[string]interface{})["memberId"] != phone["you"].(map[string]interface{})["memberId"] {
 		t.Fatalf("the same device must come back as the same member")
+	}
+}
+
+// A playlist of a hundred-odd songs, each with a title, an artist and a cover
+// URL, is far past the 16 KiB a frame used to be allowed. It must arrive whole
+// rather than get the socket closed.
+func TestAPlaylistSizedQueueArrives(t *testing.T) {
+	ts := setupTestServer()
+	defer ts.Close()
+	fakeGateway(t)
+
+	status, phone := postJSON(t, ts.URL+"/api/connect", connectBody("tino", "secret", "phone0001", "prod"))
+	if status != http.StatusOK {
+		t.Fatalf("connect failed: %d %v", status, phone)
+	}
+	ws := dialParty(t, ts.URL, phone["code"].(string), phone["token"].(string))
+	defer ws.Close()
+	nextFrame(t, ws, protocol.FrameWelcome)
+
+	queue := make([]map[string]interface{}, 110)
+	for i := range queue {
+		queue[i] = map[string]interface{}{
+			"videoId":      fmt.Sprintf("video%06d", i),
+			"title":        fmt.Sprintf("A Fairly Ordinary Song Title, Number %d (Remastered 2011)", i),
+			"artist":       "Some Artist, Another Artist, A Third Artist",
+			"thumbnailUrl": "https://lh3.googleusercontent.com/" + strings.Repeat("x", 180) + "=w544-h544-l90-rj",
+			"durationMs":   215000,
+			"fromContext":  true,
+		}
+	}
+	_ = ws.WriteJSON(map[string]interface{}{
+		"type": protocol.FrameControl, "action": protocol.ActionSetQueue,
+		"queue": queue, "queueIndex": 0,
+	})
+	got := nextFrame(t, ws, protocol.FrameQueue)
+	items, _ := got["queue"].(map[string]interface{})["items"].([]interface{})
+	if items == nil {
+		items, _ = got["items"].([]interface{})
+	}
+	if len(items) != 110 {
+		t.Fatalf("the whole playlist must be the party's queue, got %d items in %v", len(items), got["type"])
+	}
+}
+
+// A browser can't set an Authorization header on a WebSocket, so it offers its
+// token as a subprotocol; the server must accept it, answer with the plain
+// "bitchord" protocol (never the one holding the token), and still refuse an
+// origin it hasn't been told about.
+func TestBrowserJoinsWithItsTokenInTheSubprotocol(t *testing.T) {
+	ts := setupTestServer()
+	defer ts.Close()
+	fakeGateway(t)
+	saved := config.AllowedOrigins
+	config.AllowedOrigins = []string{"https://music.example"}
+	t.Cleanup(func() { config.AllowedOrigins = saved })
+
+	status, web := postJSON(t, ts.URL+"/api/connect", connectBody("tino", "secret", "browser0001", "web"))
+	if status != http.StatusOK {
+		t.Fatalf("connect failed: %d %v", status, web)
+	}
+	u, _ := url.Parse(ts.URL)
+	u.Scheme = "ws"
+	u.Path = "/ws/parties/" + web["code"].(string)
+	dial := func(origin string, protocols ...string) (*websocket.Conn, *http.Response, error) {
+		d := websocket.Dialer{Subprotocols: protocols}
+		h := http.Header{}
+		h.Set("Origin", origin)
+		return d.Dial(u.String(), h)
+	}
+
+	ws, resp, err := dial("https://music.example", "bitchord", "bitchord.token."+web["token"].(string))
+	if err != nil {
+		t.Fatalf("a browser offering its token as a subprotocol must get in: %v", err)
+	}
+	defer ws.Close()
+	if got := resp.Header.Get("Sec-WebSocket-Protocol"); got != "bitchord" {
+		t.Fatalf("the server must answer with the plain protocol, not the token; got %q", got)
+	}
+	welcome := nextFrame(t, ws, protocol.FrameWelcome)
+	if welcome["you"].(map[string]interface{})["memberId"] != web["you"].(map[string]interface{})["memberId"] {
+		t.Fatalf("the socket must belong to the member that signed in")
+	}
+
+	if _, resp, err := dial("https://music.example", "bitchord", "bitchord.token.wrong"); err == nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("a wrong token must be refused with 401")
+	}
+	if _, resp, err := dial("https://elsewhere.example", "bitchord", "bitchord.token."+web["token"].(string)); err == nil || resp == nil || resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("an origin that isn't allowed must be refused")
 	}
 }

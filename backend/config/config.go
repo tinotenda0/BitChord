@@ -120,7 +120,12 @@ var (
 	CreateRatePerMinute  = getInt("JAM_CREATE_RATE_PER_MINUTE", 2)
 	RateLimitMaxEntries  = getInt("JAM_RATE_LIMIT_MAX_ENTRIES", 10000)
 	RequestMaxBytes      = int64(getInt("JAM_REQUEST_MAX_BYTES", 16*1024))
-	WebSocketMaxBytes    = int64(getInt("JAM_WEBSOCKET_MAX_BYTES", 16*1024))
+	// A setQueue carries the whole running order, history included, and a
+	// Connect party allows 200 upcoming songs. At roughly 400 bytes a track
+	// (title, artist and a cover URL), 16 KiB held about forty: playing a
+	// 110-song playlist got the socket closed, the queue never arrived, and
+	// the device fell back to the party's one-song state on reconnect.
+	WebSocketMaxBytes    = int64(getInt("JAM_WEBSOCKET_MAX_BYTES", 1024*1024))
 	ConnectionIdleMs     = int64(getInt("JAM_CONNECTION_IDLE_MS", 15*60*1000))
 	FrameRatePerSecond   = float64(getInt("JAM_FRAME_RATE_PER_SECOND", 30))
 	AllowedOrigins       = getCSV("JAM_ALLOWED_ORIGINS", "")
