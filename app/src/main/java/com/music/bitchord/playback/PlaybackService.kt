@@ -1573,6 +1573,10 @@ class PlaybackService : MediaLibraryService() {
         // session's wrapper reports the user's actions to it.
         partySync = PartySync(scope) { player }.also { it.start() }
         connectVolume = ConnectVolume(this, scope).also { it.start() }
+        // Fork: the widget redraws once a cover it was missing is found.
+        scope.launch {
+            MissingArtwork.revision.drop(1).collect { publishWidgetState() }
+        }
         // AutoPlay has one shared supplier in a party. The host supplies it
         // while connected; if they disappear, the lowest stable connected member
         // ID takes over. That election is deterministic on every phone, so two
@@ -5065,7 +5069,10 @@ class PlaybackService : MediaLibraryService() {
         val remote = remotePlayer
         val exoPlayer: Player = remote ?: player ?: return
         val hint = if (remote == null) playing else null
-        val song = exoPlayer.currentMediaItem?.toSong() ?: return
+        // Fork: a track that arrived with no cover it can show here — an album
+        // row, or a download's cover on the device playing it — gets one looked
+        // up; the collector in onCreate redraws when it lands.
+        val song = exoPlayer.currentMediaItem?.toSong()?.let(MissingArtwork::fill) ?: return
         // LikeState only knows ratings this process has seen: a fresh service
         // started from the widget or a restart has none until something seeds
         // it. Unknown is not "not liked", so keep what was last published for
