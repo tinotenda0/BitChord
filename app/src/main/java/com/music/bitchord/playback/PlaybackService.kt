@@ -1573,6 +1573,10 @@ class PlaybackService : MediaLibraryService() {
         // session's wrapper reports the user's actions to it.
         partySync = PartySync(scope) { player }.also { it.start() }
         connectVolume = ConnectVolume(this, scope).also { it.start() }
+        // Fork: the widget redraws once a cover it was missing is found.
+        scope.launch {
+            MissingArtwork.revision.drop(1).collect { publishWidgetState() }
+        }
         // AutoPlay has one shared supplier in a party. The host supplies it
         // while connected; if they disappear, the lowest stable connected member
         // ID takes over. That election is deterministic on every phone, so two
@@ -1670,6 +1674,12 @@ class PlaybackService : MediaLibraryService() {
                         val stand = PartyRemotePlayer(scope)
                         remotePlayer = stand
                         session.player = stand
+                        stand.addListener(object : Player.Listener {
+                            override fun onEvents(player: Player, events: Player.Events) {
+                                if (remotePlayer === stand) publishWidgetState()
+                            }
+                        })
+                        publishWidgetState()
                     } else if (!remote) {
                         val stand = remotePlayer ?: return@collect
                         // Becoming the device that plays. The remote stays in the
@@ -1692,6 +1702,7 @@ class PlaybackService : MediaLibraryService() {
                         remotePlayer = null
                         localSessionPlayer?.let { session.player = it }
                         stand.release()
+                        publishWidgetState()
                     }
                     refreshCustomLayouts()
                 }
@@ -5050,8 +5061,18 @@ class PlaybackService : MediaLibraryService() {
      * play right up to the moment it is released.
      */
     private fun publishWidgetState(playing: Boolean? = null) {
-        val exoPlayer = player ?: return
-        val song = exoPlayer.currentMediaItem?.toSong() ?: return
+        // A party remote shows the party, like the notification does: this
+        // device's own player is parked on whatever it last played itself, and
+        // the widget sat on that while the music moved on somewhere else. The
+        // [playing] hint comes from the local player's callback, so it means
+        // nothing then.
+        val remote = remotePlayer
+        val exoPlayer: Player = remote ?: player ?: return
+        val hint = if (remote == null) playing else null
+        // Fork: a track that arrived with no cover it can show here — an album
+        // row, or a download's cover on the device playing it — gets one looked
+        // up; the collector in onCreate redraws when it lands.
+        val song = exoPlayer.currentMediaItem?.toSong()?.let(MissingArtwork::fill) ?: return
         // LikeState only knows ratings this process has seen: a fresh service
         // started from the widget or a restart has none until something seeds
         // it. Unknown is not "not liked", so keep what was last published for
@@ -5067,7 +5088,7 @@ class PlaybackService : MediaLibraryService() {
                 artist = song.artist,
                 artworkUrl = song.thumbnailUrl,
                 // playWhenReady, not isPlaying — see MediaWidgetSnapshot.isPlaying.
-                isPlaying = playing ?: exoPlayer.playWhenReady,
+                isPlaying = hint ?: exoPlayer.playWhenReady,
                 hasPrevious = exoPlayer.hasPreviousMediaItem(),
                 hasNext = exoPlayer.hasNextMediaItem(),
                 isLiked = liked,
