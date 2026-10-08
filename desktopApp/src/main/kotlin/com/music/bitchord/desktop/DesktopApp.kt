@@ -799,7 +799,8 @@ fun BitChordDesktopApp() {
         // A party queue is temporary. The phone keeps the listener's own queue aside and so does
         // desktop; never let a shared running order overwrite the queue restored after leaving or
         // after a process restart.
-        if (DesktopListenTogether.state.value.inParty) return
+        // Fork: in Connect, as the computer playing, the queue is this user's own and is kept.
+        if (!DesktopListenTogether.state.value.ownsQueue) return
         persistence.saveQueue(liveQueue.songs)
         persistence.saveString("queue_index", liveQueue.index.toString())
     }
@@ -841,7 +842,8 @@ fun BitChordDesktopApp() {
     fun playSong(song: Song, startPlaying: Boolean = true, source: DesktopQueueSource? = null) {
         if (partyTrackChangeBlocked()) return
         val tapped = canonicalSong(song).withSource(source)
-        val songs = if (DesktopListenTogether.state.value.inParty) {
+        // Fork: a jam's shared queue; Connect plays like this computer alone.
+        val songs = if (DesktopListenTogether.state.value.inJam) {
             partyPlaybackQueue(tapped)
         } else {
             // The phone's one-off queue: the song, then whatever the listener had queued by hand.
@@ -887,7 +889,7 @@ fun BitChordDesktopApp() {
         if (partyTrackChangeBlocked()) return
         val playable = songs.map(::canonicalSong).map { it.withSource(source) }
         val at = startIndex.coerceIn(playable.indices)
-        if (DesktopListenTogether.state.value.inParty) {
+        if (DesktopListenTogether.state.value.inJam) {
             liveQueue = DesktopQueue(partyPlaybackQueue(playable[at]), index = 0)
             preShuffleOrder = emptyList()
             playCurrent()
@@ -1630,7 +1632,8 @@ fun BitChordDesktopApp() {
     // by a length this computer decides from its own copy of the audio, so every member would begin
     // the next song at a different moment and be dragged back by a correcting seek. The transition a
     // party shares is the plain one. The settings themselves are left alone and come back after.
-    val inParty = partyState.inParty
+    // Fork: only a jam has several devices playing at once; in Connect only one does.
+    val inParty = partyState.inJam
     LaunchedEffect(automix, crossfadeSeconds, inParty, audioQuality, selectedSong?.videoId, queue, liveQueue.index, shuffle, repeatMode) {
         playbackEngine.setAutomixEnabled(automix && !inParty)
         playbackEngine.setCrossfadeSeconds(if (inParty) 0 else crossfadeSeconds)

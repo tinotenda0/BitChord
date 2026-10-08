@@ -35,6 +35,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -73,9 +74,24 @@ internal object DesktopPlayerHost : PlayerHost {
     @Volatile
     var onVolumeChange: (Float) -> Unit = { volumeLevel.value = it }
 
+    // Fork: as a Connect remote the bar is the playing device's volume, as it
+    // is on the phone, and moving it asks that device to change. Otherwise it
+    // is this computer's own.
     override val volume: SystemVolume = object : SystemVolume {
-        override val level: StateFlow<Float> = volumeLevel.asStateFlow()
-        override fun set(level: Float) = onVolumeChange(level.coerceIn(0f, 1f))
+        override val level: StateFlow<Float> = combine(volumeLevel, DesktopListenTogether.state) { own, party ->
+            val remote = party.playback.volume?.takeIf { party.isRemote && party.playback.volumeControl }
+            remote?.toFloat() ?: own
+        }.stateIn(scope, SharingStarted.Eagerly, volumeLevel.value)
+
+        override fun set(level: Float) {
+            val party = DesktopListenTogether.state.value
+            if (party.isRemote && party.playback.volumeControl) {
+                DesktopListenTogether.setVolume(level.coerceIn(0f, 1f).toDouble())
+            } else {
+                onVolumeChange(level.coerceIn(0f, 1f))
+            }
+        }
+
         override fun refresh() = Unit
     }
 

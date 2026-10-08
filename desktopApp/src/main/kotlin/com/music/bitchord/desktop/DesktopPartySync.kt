@@ -96,8 +96,6 @@ internal class DesktopPartySync(
     /** Fork: the last Connect volume request acted on; below zero until this device is the output. */
     private var appliedVolumeRequest = -1L
     private var lastReportedVolume: Float? = null
-    /** Fork: whether this device has been made a remote and so silenced its own player. */
-    private var silencedForRemote = false
 
     /**
      * Until when inbound reconciliation is held off.
@@ -162,16 +160,13 @@ internal class DesktopPartySync(
         outOfTouch = false
         appliedVolumeRequest = -1L
         lastReportedVolume = null
-        silencedForRemote = false
+        engine.setMuted(false)
     }
 
     /** Something the listener asked for here, which the party should be told about. */
     fun onLocalIntent(expectedVideoId: String? = null) {
         val party = DesktopListenTogether.state.value
         if (!party.inParty || party.controlsLocked) return
-        // Fork: a remote's controls go to the party from the player screen;
-        // nothing done to this computer's own player is the party's business.
-        if (party.isRemote) return
         // Queue/transport gestures can arrive while a preceding song selection is still loading.
         // Keep waiting for that selection rather than letting the later gesture cancel its guard.
         val waitForVideoId = expectedVideoId
@@ -233,22 +228,16 @@ internal class DesktopPartySync(
             locallyPaused = false
             appliedAutoplay = null
             outOfTouch = false
-            silencedForRemote = false
             appliedVolumeRequest = -1L
+            engine.setMuted(false)
             return
         }
-        // Fork: a remote drives the party from the player screen and plays
-        // nothing itself. Its own player is paused once, on becoming one, and
-        // otherwise left alone.
-        if (party.isRemote) {
-            if (!silencedForRemote) {
-                silencedForRemote = true
-                if (engine.state.value.isPlaying) engine.pause()
-            }
-            appliedVolumeRequest = -1L
-            return
-        }
-        silencedForRemote = false
+        // Fork: a Connect remote follows the party like a jam listener, with
+        // its sound off. Its player then shows what is playing elsewhere (the
+        // song, the playhead, the lyrics, the queue) and its buttons reach the
+        // party the way a listener's do. Becoming the device that plays just
+        // turns the sound on, already in step.
+        engine.setMuted(party.isRemote)
         if (!party.controlsLocked) locallyPaused = false
         if (nowMs() < quietUntilMs) return
         // Fork: not hearing from the party, what is held is the last thing
@@ -414,7 +403,7 @@ internal class DesktopPartySync(
     /** Tells the party what this device just did. */
     private fun publish() {
         val party = DesktopListenTogether.state.value
-        if (!party.inParty || party.isRemote) return
+        if (!party.inParty) return
         val playback = engine.state.value
         // Unlike ExoPlayer, the desktop state cannot represent "play when ready" while a stream
         // is still resolving: it temporarily reads as paused. Wait for the decoder so creating a

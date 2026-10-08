@@ -98,7 +98,7 @@ internal fun DesktopListenTogetherDialog(autoplayEnabled: Boolean, onDismiss: ()
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
-                        if (state.inParty) "Everyone hears the same song at the same moment"
+                        if (state.inJam) "Everyone hears the same song at the same moment"
                         else "Start a room or join friends with a six-character code",
                         color = DesktopSecondary,
                         style = MaterialTheme.typography.bodyMedium,
@@ -112,7 +112,7 @@ internal fun DesktopListenTogetherDialog(autoplayEnabled: Boolean, onDismiss: ()
             if (!LocalDesktopPanelIsPage.current) HorizontalDivider(color = DesktopCardEdge)
 
             when {
-                state.inParty -> PartyRoom(
+                state.inJam -> PartyRoom(
                     state = state,
                     activity = activity,
                     busy = busy,
@@ -228,6 +228,7 @@ private fun PartyLanding(
         contentPadding = PaddingValues(28.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
+        item { ConnectCard() }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                 PartyChoiceCard(
@@ -321,6 +322,92 @@ private fun PartyLanding(
                         colors = ButtonDefaults.buttonColors(containerColor = DesktopCardInsetFill),
                     ) { Text(if (server.isBlank()) "Use built-in" else "Save") }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Fork: Connect. This computer joins the gateway account's devices, so the
+ * phone can play on it and it can play on the phone. Signing in to the
+ * gateway is all it takes; the switch is for keeping it out.
+ */
+@Composable
+private fun ConnectCard() {
+    val gatewayUser by DesktopGateway.username.collectAsState()
+    val enabled by DesktopListenTogether.connectEnabled.collectAsState()
+    val state by DesktopListenTogether.state.collectAsState()
+    val scope = rememberCoroutineScope()
+    var user by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    PartyChoiceCard(
+        title = "Connect",
+        subtitle = "Your own devices: play on this computer from your phone, or the other way round.",
+    ) {
+        if (gatewayUser.isBlank() || !DesktopGateway.signedIn) {
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = user,
+                    onValueChange = { user = it.take(80); error = null },
+                    label = { Text("Gateway username") },
+                    singleLine = true,
+                    modifier = Modifier.weight(1f),
+                )
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it; error = null },
+                    label = { Text("Password") },
+                    singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    modifier = Modifier.weight(1f),
+                )
+                Button(
+                    enabled = !busy && user.isNotBlank() && password.isNotEmpty(),
+                    onClick = {
+                        busy = true
+                        scope.launch {
+                            DesktopGateway.signIn(user, password)
+                                .onSuccess {
+                                    password = ""
+                                    DesktopListenTogether.retryConnectNow()
+                                }
+                                .onFailure { error = it.message }
+                            busy = false
+                        }
+                    },
+                ) { Text("Sign in") }
+            }
+            error?.let {
+                Spacer(Modifier.height(8.dp))
+                Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Signed in as $gatewayUser", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        when {
+                            !enabled -> "Off: your other devices can't see this computer"
+                            state.inJam -> "Paused while you're in a jam"
+                            state.isConnect && state.live && state.isRemote -> "Connected · controlling ${state.output?.deviceName ?: "another device"}"
+                            state.isConnect && state.live -> "Connected · playing here"
+                            else -> "Connecting…"
+                        },
+                        color = DesktopSecondary,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                Switch(checked = enabled, onCheckedChange = DesktopListenTogether::setConnectEnabled)
+                Spacer(Modifier.width(8.dp))
+                TextButton(onClick = {
+                    scope.launch {
+                        if (state.isConnect) DesktopListenTogether.leaveParty()
+                        DesktopGateway.signOut()
+                    }
+                }) { Text("Sign out") }
             }
         }
     }

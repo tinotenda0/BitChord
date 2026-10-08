@@ -60,9 +60,9 @@ class DesktopPlaybackEngine(
     /** Automix's evidence. */
     private val analyzer = DesktopTrackAnalyzer(
         performance = { automixPerformance },
-        // Automix is off in a party, so whatever was queued for it before the party began is
-        // dropped rather than run to completion.
-        stopped = { DesktopListenTogether.state.value.inParty },
+        // Automix is off in a jam, so whatever was queued for it before the jam began is dropped
+        // rather than run to completion. Fork: Connect plays on one device, so it stays on there.
+        stopped = { DesktopListenTogether.state.value.inJam },
     )
     private val commands = ConcurrentLinkedQueue<Command>()
     private val running = AtomicBoolean(true)
@@ -441,9 +441,24 @@ class DesktopPlaybackEngine(
 
     fun setVolume(value: Float) {
         volume = value.coerceIn(0f, 1f)
-        sink.gain = volume
+        sink.gain = audibleGain()
         _state.update { it.copy(volume = volume) }
     }
+
+    /**
+     * Fork: silent without forgetting the volume. A Connect remote follows the
+     * party with its sound off, so its player shows what is playing elsewhere;
+     * the listener's volume is what comes back when this computer plays again.
+     */
+    @Volatile private var muted = false
+
+    fun setMuted(value: Boolean) {
+        if (muted == value) return
+        muted = value
+        sink.gain = audibleGain()
+    }
+
+    private fun audibleGain(): Float = if (muted) 0f else volume
 
     /** Sets the source quality ceiling used the next time a track is resolved. */
     fun setAudioQuality(quality: String) {
@@ -1245,7 +1260,7 @@ class DesktopPlaybackEngine(
             _state.update { it.copy(isPlaying = false, error = "No audio output: ${failure.message}") }
             return
         }
-        sink.gain = volume
+        sink.gain = audibleGain()
         framesWritten = sink.framesPlayed()
         speedProcessor = DesktopAudioSpeed(sink.format.channels, sink.format.sampleRate)
         spatial = DesktopSpatialAudio(sink.format.channels, sink.format.sampleRate)
@@ -1270,7 +1285,7 @@ class DesktopPlaybackEngine(
         val positionUs = playhead.peek(framesWritten)
         sink.open(decoded.copy(bytesPerSample = precisionBytes(), isFloat = preferFloat))
             .onSuccess {
-                sink.gain = volume
+                sink.gain = audibleGain()
                 framesWritten = sink.framesPlayed()
                 buildChain()
                 // A reopened line counts frames from zero again, so the clock has to be rebased

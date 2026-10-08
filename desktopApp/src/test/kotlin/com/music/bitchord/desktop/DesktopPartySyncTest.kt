@@ -21,7 +21,7 @@ import kotlin.test.assertTrue
 class DesktopPartySyncTest {
 
     @Test
-    fun `party queue publish preserves current autoplay and drops only context tail`() {
+    fun `party queue publish keeps the album or playlist and marks each section`() {
         val past = Song("past", "Past", "Artist", null, queueTier = QueueTier.CONTEXT)
         val current = Song("current", "Current", "Artist", null, queueTier = QueueTier.AUTOPLAY)
         val contextTail = Song("context", "Context", "Artist", null, queueTier = QueueTier.CONTEXT)
@@ -34,10 +34,12 @@ class DesktopPartySyncTest {
             currentDurationMs = 123_000L,
         )
 
-        assertEquals(listOf("past", "current", "auto"), published.map(PartyTrack::videoId))
+        // Fork: the album or playlist being played is part of what the party plays, as on the phone.
+        assertEquals(listOf("past", "current", "context", "auto"), published.map(PartyTrack::videoId))
         assertEquals(1, index)
         assertTrue(published[1].fromAutoplay, "the current AutoPlay item must remain marked")
-        assertTrue(published[2].fromAutoplay, "the AutoPlay tail must be sent to the server")
+        assertTrue(published[2].fromContext, "the playlist's tail must be sent, marked as context")
+        assertTrue(published[3].fromAutoplay, "the AutoPlay tail must be sent to the server")
         assertEquals(123_000L, published[1].durationMs)
     }
 
