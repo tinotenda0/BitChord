@@ -345,35 +345,3 @@ class PartyRemotePlayer(
     }
 }
 
-/**
- * The running order a remote shows: the party's queue, with the current song's
- * entry taken from the party's track wherever that knows more.
- *
- * The two are separate records. The queue's copy of a song is whatever the
- * device that queued it knew, often no length at all (anything picked from a
- * row that showed none); the track is the one the device playing it reports
- * its real length into. A remote built from the queue alone had no length for
- * the song playing, which read as 0:00 / -0:00 with the knob at the end, and
- * the lyrics, which wait for a length to match against, never loaded for it.
- *
- * And the queue and the track are separate controls, so between them the party
- * can hold a running order the current song is not in. Showing that order
- * would put the wrong song under the cursor, so the track alone stands in for
- * it until the queue catches up.
- */
-internal fun remotePlaylist(party: ListenTogether.State): List<PartyTrack> {
-    val current = party.playback.track ?: return emptyList()
-    val queue = party.queue.items
-    if (queue.none { it.videoId == current.videoId }) return listOf(current)
-    return queue.map { entry ->
-        if (entry.videoId == current.videoId) {
-            // Fork: the cover too, which the queue's copy can lack the same way.
-            entry.copy(
-                durationMs = entry.durationMs ?: current.durationMs,
-                thumbnailUrl = entry.thumbnailUrl ?: current.thumbnailUrl,
-            )
-        } else {
-            entry
-        }
-    }
-}
