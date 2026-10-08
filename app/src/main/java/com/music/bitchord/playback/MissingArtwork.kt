@@ -55,6 +55,18 @@ object MissingArtwork {
         return song
     }
 
+    /** The cover found for [videoId], if any. */
+    fun known(videoId: String): String? = found[videoId]
+
+    /**
+     * Asks for covers for the tracks about to play, so that the queue rows,
+     * and the lock screen and Android Auto when each one starts, have one.
+     * Bounded by the caller: only the few nearest the playhead are worth it.
+     */
+    fun prefetch(songs: List<Song>) {
+        songs.forEach(::fill)
+    }
+
     /** [song] with a cover if one is already known, without asking for one. */
     fun cached(song: Song): Song {
         if (!song.thumbnailUrl.isNullOrBlank()) return song

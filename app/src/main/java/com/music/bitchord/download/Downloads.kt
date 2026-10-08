@@ -568,6 +568,7 @@ object Downloads {
             title = asked.title,
             artist = asked.artist,
             thumbnailUrl = savedArtwork ?: artworkUri ?: asked.thumbnailUrl,
+            sourceThumbnailUrl = shareable(asked.thumbnailUrl) ?: shareable(fetched.thumbnailUrl),
             durationText = asked.durationText,
             albumName = album,
             uri = uri.toString(),
@@ -579,6 +580,7 @@ object Downloads {
             title = fetched.title,
             artist = fetched.artist,
             thumbnailUrl = savedArtwork ?: artworkUri ?: fetched.thumbnailUrl,
+            sourceThumbnailUrl = shareable(fetched.thumbnailUrl) ?: shareable(asked.thumbnailUrl),
             durationText = fetched.durationText,
             albumName = album,
             uri = uri.toString(),
@@ -619,6 +621,18 @@ object Downloads {
     }
 
     private val recordLock = Any()
+
+    private fun shareable(url: String?): String? =
+        url?.takeIf { it.isNotBlank() && !com.music.bitchord.playback.MissingArtwork.isOnDevice(it) }
+
+    /** The cover this device drew a downloaded track with, which may be a file only it can open. */
+    fun savedCover(videoId: String): String? = _savedMetadata.value[videoId]?.thumbnailUrl
+
+    /**
+     * The online cover a downloaded track was saved from, for sending to another
+     * device. Only known for downloads made since it was recorded.
+     */
+    fun sharedCover(videoId: String): String? = _savedMetadata.value[videoId]?.sourceThumbnailUrl
 
     /** Returns all downloaded songs whose files still exist on disk. */
     suspend fun getDownloadedSongs(context: Context): List<Song> = withContext(Dispatchers.IO) {
@@ -1306,6 +1320,12 @@ internal data class SavedSongMetadata(
     val title: String,
     val artist: String,
     val thumbnailUrl: String? = null,
+    /**
+     * The online cover [thumbnailUrl] was saved from. [thumbnailUrl] is a file
+     * here once the download has its own copy, and a file means nothing to the
+     * other devices in a party; this is what they are sent instead.
+     */
+    val sourceThumbnailUrl: String? = null,
     val durationText: String? = null,
     /**
      * What release this track is off, when the row it was downloaded from knew.

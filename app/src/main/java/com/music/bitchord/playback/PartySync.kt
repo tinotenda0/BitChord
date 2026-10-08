@@ -1204,7 +1204,9 @@ internal fun Song.toPartyTrack(playerDurationMs: Long): PartyTrack = PartyTrack(
     // Fork: a download's or a local file's cover is a file on this device, which
     // no other device in the party can open; sent as nothing, the others look up
     // the track's own cover instead (see MissingArtwork).
-    thumbnailUrl = thumbnailUrl?.takeUnless(MissingArtwork::isOnDevice),
+    thumbnailUrl = thumbnailUrl?.takeUnless(MissingArtwork::isOnDevice)
+        ?: com.music.bitchord.download.Downloads.sharedCover(videoId)
+        ?: MissingArtwork.known(videoId),
     // The player's own figure when it has one, since it comes from the decoder;
     // otherwise what the row that queued the track claimed.
     durationMs = playerDurationMs.takeIf { it > 0L }
@@ -1217,7 +1219,13 @@ internal fun PartyTrack.toSong(): Song = Song(
     videoId = videoId,
     title = title,
     artist = artist,
-    thumbnailUrl = thumbnailUrl,
+    // A track that came back without a cover may still have one here: this
+    // device's own download of it (the device that queued a download sends no
+    // file path, and then rebuilds its queue from the party like everyone
+    // else), or one already looked up.
+    thumbnailUrl = thumbnailUrl?.takeUnless(MissingArtwork::isOnDevice)
+        ?: com.music.bitchord.download.Downloads.savedCover(videoId)
+        ?: MissingArtwork.known(videoId),
     // Not cosmetic: this is what a cross-source match is made on, so a device
     // whose sources differ from the sender's needs it to find the same
     // recording. See [Song.matchQuery].
