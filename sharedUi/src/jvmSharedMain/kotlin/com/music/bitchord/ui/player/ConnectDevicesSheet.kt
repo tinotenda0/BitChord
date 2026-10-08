@@ -15,63 +15,63 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.PhoneAndroid
 import androidx.compose.material.icons.rounded.Speaker
 import androidx.compose.material.icons.rounded.VolumeDown
 import androidx.compose.material.icons.rounded.VolumeUp
-import androidx.compose.material3.Slider
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.mutableStateOf
-import kotlinx.coroutines.delay
-import androidx.compose.runtime.setValue
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.music.bitchord.R
-import android.widget.Toast
-import androidx.compose.ui.platform.LocalContext
 import com.music.bitchord.data.listentogether.ConnectDevice
-import com.music.bitchord.data.listentogether.ListenTogether
 import com.music.bitchord.data.listentogether.PartyMember
+import com.music.bitchord.sharedui.resources.*
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
 import dev.chrisbanes.haze.HazeState
+import kotlinx.coroutines.delay
+import org.jetbrains.compose.resources.stringResource
 
 /**
- * This account's devices, and which one the music is coming out of.
+ * Fork: this account's Connect devices, and which one the music is coming out of.
  *
- * Grouped by phone, not listed by connection: one phone running both the
+ * Shared by the phone and the desktop, which supply the party through
+ * [PlayerHost.connect] and carry out what is picked here.
+ *
+ * Grouped by device, not listed by connection: one phone running both the
  * stable and the dev build shows once, with a row for each build, and two
- * phones never merge — see [com.music.bitchord.data.listentogether.DeviceIdentity].
- * Tapping a row moves playback there, this phone included; the last row is
- * this phone's own outputs (speaker, headphones, Bluetooth), which is what the
- * button that opens this used to go straight to.
+ * devices never merge. Tapping a row moves playback there, this device
+ * included; the last row is this device's own outputs (speaker, headphones,
+ * Bluetooth), which is what the button that opens this used to go straight to.
  */
 @Composable
 internal fun ConnectDevicesSheet(
     hazeState: HazeState,
     onDismiss: () -> Unit,
-    onThisPhoneOutput: () -> Unit,
+    onThisDeviceOutput: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val state by ListenTogether.state.collectAsStateWithLifecycle()
-    val context = LocalContext.current
+    val host = PlayerPlatform.host
+    val state by host.connect.collectAsState()
     val you = state.you
-    val outputId = state.output?.memberId
+    val outputId = state.outputId
     // Connected devices are members; the rest of what the server remembers are
     // asleep, and are listed too so playback can be sent to them. A device that
     // is both (still a member, just away) is listed once, as the member.
@@ -86,7 +86,7 @@ internal fun ConnectDevicesSheet(
     } + state.devices
         .filter { known -> state.members.none { it.deviceKey == known.deviceKey && it.app == known.app } }
         .map { DeviceEntry(it.deviceKey, it.app, it.deviceName, member = null, known = it) }
-    // This phone first, then wherever the music is, then everything else by name.
+    // This device first, then wherever the music is, then everything else by name.
     val groups = entries
         .groupBy { it.deviceKey }
         .values
@@ -98,7 +98,7 @@ internal fun ConnectDevicesSheet(
 
     PlayerDrawer(
         hazeState = hazeState,
-        title = stringResource(R.string.connect_devices_title),
+        title = stringResource(Res.string.connect_devices_title),
         onDismiss = onDismiss,
         modifier = modifier,
     ) {
@@ -107,14 +107,19 @@ internal fun ConnectDevicesSheet(
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             groups.forEach { group ->
-                val isThisPhone = group.any { it.deviceKey.isNotBlank() && it.deviceKey == you?.deviceKey }
-                val phoneName = group.first().deviceName
-                val title = if (isThisPhone) stringResource(R.string.connect_this_phone, phoneName) else phoneName
-                val waking = stringResource(R.string.connect_waking, phoneName)
+                val isThisDevice = group.any { it.deviceKey.isNotBlank() && it.deviceKey == you?.deviceKey }
+                val name = group.first().deviceName
+                val icon = if (group.any { it.app == DESKTOP_APP }) Icons.Rounded.Computer else Icons.Rounded.PhoneAndroid
+                val title = when {
+                    !isThisDevice -> name
+                    host.isComputer -> stringResource(Res.string.connect_this_computer, name)
+                    else -> stringResource(Res.string.connect_this_phone, name)
+                }
+                val waking = stringResource(Res.string.connect_waking, name)
                 val act: (DeviceEntry) -> (() -> Unit)? = { entry ->
                     entry.action(outputId)?.let { run ->
                         {
-                            if (entry.sleeping) Toast.makeText(context, waking, Toast.LENGTH_SHORT).show()
+                            if (entry.sleeping) host.showMessage(waking)
                             run()
                             onDismiss()
                         }
@@ -123,16 +128,17 @@ internal fun ConnectDevicesSheet(
                 if (group.size == 1) {
                     val entry = group.single()
                     val status = statusFor(entry, outputId)
+                    val label = appLabel(entry.app)
                     DeviceRow(
-                        icon = Icons.Rounded.PhoneAndroid,
+                        icon = icon,
                         title = title,
-                        subtitle = status?.let { "${appLabel(entry.app)} · $it" } ?: appLabel(entry.app),
+                        subtitle = status?.let { "$label · $it" } ?: label,
                         lit = entry.isOutput(outputId),
                         dim = entry.sleeping,
                         onClick = act(entry),
                     )
                 } else {
-                    // Two builds of the app on one phone: the phone once, each
+                    // Two builds of the app on one device: the device once, each
                     // build under it.
                     Text(
                         text = title,
@@ -142,7 +148,7 @@ internal fun ConnectDevicesSheet(
                     )
                     group.sortedBy { it.app != "prod" }.forEach { entry ->
                         DeviceRow(
-                            icon = Icons.Rounded.PhoneAndroid,
+                            icon = icon,
                             title = appLabel(entry.app),
                             subtitle = statusFor(entry, outputId),
                             lit = entry.isOutput(outputId),
@@ -155,26 +161,27 @@ internal fun ConnectDevicesSheet(
         }
 
         // The device playing, turned up or down from here. Only when this is
-        // not that device (its own buttons do that) and it allows it.
-        val playback = state.playback
-        val volume = playback.volume
-        if (state.isRemote && volume != null && playback.volumeControl) {
+        // not that device (its own controls do that) and it allows it.
+        val volume = state.volume
+        if (state.isRemote && volume != null && state.volumeControl) {
             Spacer(Modifier.height(10.dp))
-            RemoteVolume(volume = volume, steps = playback.volumeSteps)
+            RemoteVolume(volume = volume, steps = state.volumeSteps, onChange = host::connectSetVolume)
         }
 
         Spacer(Modifier.height(10.dp))
         DeviceRow(
             icon = Icons.Rounded.Headphones,
-            title = stringResource(R.string.connect_this_phone_output),
+            title = stringResource(
+                if (host.isComputer) Res.string.connect_this_computer_output else Res.string.connect_this_phone_output,
+            ),
             subtitle = null,
             lit = false,
-            onClick = onThisPhoneOutput,
+            onClick = onThisDeviceOutput,
         )
     }
 }
 
-/** One build on one phone: connected (a member), asleep (only remembered), or both. */
+/** One build on one device: connected (a member), asleep (only remembered), or both. */
 private data class DeviceEntry(
     val deviceKey: String,
     val app: String,
@@ -194,31 +201,35 @@ private data class DeviceEntry(
      * What tapping it does: move playback there, wake it to do so, or nothing
      * (already playing there, or asleep with no way to wake it).
      */
-    fun action(outputId: String?): (() -> Unit)? = when {
-        isOutput(outputId) -> null
-        member != null && member.connected -> { { ListenTogether.transfer(member.memberId) } }
-        // Busy in a jam: waking it would drag it out of that, which is its
-        // owner's call to make on that device, not this one's.
-        inJam -> null
-        known != null && known.wakeable -> { { ListenTogether.wake(known.deviceId) } }
-        else -> null
+    fun action(outputId: String?): (() -> Unit)? {
+        val host = PlayerPlatform.host
+        return when {
+            isOutput(outputId) -> null
+            member != null && member.connected -> { { host.connectTransfer(member.memberId) } }
+            // Busy in a jam: waking it would drag it out of that, which is its
+            // owner's call to make on that device, not this one's.
+            inJam -> null
+            known != null && known.wakeable -> { { host.connectWake(known.deviceId) } }
+            else -> null
+        }
     }
 }
 
 @Composable
 private fun appLabel(app: String): String = when (app) {
-    "prod" -> stringResource(R.string.connect_app_prod)
-    "dev" -> stringResource(R.string.connect_app_dev)
+    "prod" -> stringResource(Res.string.connect_app_prod)
+    "dev" -> stringResource(Res.string.connect_app_dev)
+    DESKTOP_APP -> stringResource(Res.string.connect_app_desktop)
     else -> app
 }
 
 @Composable
 private fun statusFor(entry: DeviceEntry, outputId: String?): String? = when {
-    entry.isOutput(outputId) -> stringResource(R.string.connect_playing)
+    entry.isOutput(outputId) -> stringResource(Res.string.connect_playing)
     !entry.sleeping -> null
-    entry.inJam -> stringResource(R.string.connect_in_a_jam)
-    entry.known?.wakeable == true -> stringResource(R.string.connect_asleep)
-    else -> stringResource(R.string.connect_cant_wake)
+    entry.inJam -> stringResource(Res.string.connect_in_a_jam)
+    entry.known?.wakeable == true -> stringResource(Res.string.connect_asleep)
+    else -> stringResource(Res.string.connect_cant_wake)
 }
 
 @Composable
@@ -234,7 +245,7 @@ private fun DeviceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(CONNECT_ROW_SHAPE)
+            .clip(ROW_SHAPE)
             .background(Color.White.copy(alpha = if (lit) 0.12f else 0.05f))
             .then(
                 if (onClick != null) {
@@ -298,7 +309,7 @@ private fun DeviceRow(
  * where the finger lets go.
  */
 @Composable
-private fun RemoteVolume(volume: Double, steps: Int) {
+private fun RemoteVolume(volume: Double, steps: Int, onChange: (Double) -> Unit) {
     var dragging by remember { mutableStateOf<Float?>(null) }
     var lastSentAt by remember { mutableStateOf(0L) }
     // Where the finger let go, held until the output reports it has got there
@@ -318,7 +329,7 @@ private fun RemoteVolume(volume: Double, steps: Int) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(CONNECT_ROW_SHAPE)
+            .clip(ROW_SHAPE)
             .background(Color.White.copy(alpha = 0.05f))
             .padding(horizontal = 14.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -333,15 +344,15 @@ private fun RemoteVolume(volume: Double, steps: Int) {
             value = dragging ?: released ?: volume.toFloat(),
             onValueChange = { value ->
                 dragging = value
-                val now = android.os.SystemClock.elapsedRealtime()
+                val now = System.nanoTime() / 1_000_000L
                 if (now - lastSentAt >= VOLUME_SEND_MS) {
                     lastSentAt = now
-                    ListenTogether.setVolume(value.toDouble())
+                    onChange(value.toDouble())
                 }
             },
             onValueChangeFinished = {
                 dragging?.let {
-                    ListenTogether.setVolume(it.toDouble())
+                    onChange(it.toDouble())
                     released = it
                 }
                 dragging = null
@@ -363,5 +374,5 @@ private fun RemoteVolume(volume: Double, steps: Int) {
 private const val VOLUME_SEND_MS = 120L
 private const val VOLUME_SETTLE_MS = 1_500L
 
-/** The player drawer's row shape (PlayerDrawer's ROW_SHAPE, internal to sharedUi). */
-private val CONNECT_ROW_SHAPE = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)
+/** The app id the desktop signs in to Connect with. */
+private const val DESKTOP_APP = "desktop"

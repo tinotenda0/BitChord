@@ -160,23 +160,18 @@ class AndroidPlayerHost(context: Context) : PlayerHost {
             .stateIn(scope, SharingStarted.Eagerly, CastUi())
     }
 
-    // Fork: Connect. With another of this account's devices around, "where is
-    // the sound coming from" is a choice between devices before it is one
-    // between this phone's speaker and headphones.
-    override fun hasConnectDevices(): Boolean {
-        val party = ListenTogether.state.value
-        val others = party.members.any { it.connected && it.memberId != party.you?.memberId } ||
-            party.devices.any { it.deviceKey != party.you?.deviceKey || it.app != party.you?.app }
-        return party.isConnect && others
+    // Fork: Connect, for the shared device picker.
+    override val connect: StateFlow<ConnectUi> by lazy {
+        ListenTogether.state
+            .map { it.toConnectUi() }
+            .stateIn(scope, SharingStarted.Eagerly, ListenTogether.state.value.toConnectUi())
     }
 
-    @Composable
-    override fun ConnectDevicesSheet(hazeState: HazeState, onDismiss: () -> Unit, onThisDeviceOutput: () -> Unit) =
-        com.music.bitchord.ui.player.ConnectDevicesSheet(
-            hazeState = hazeState,
-            onDismiss = onDismiss,
-            onThisPhoneOutput = onThisDeviceOutput,
-        )
+    override fun connectTransfer(memberId: String) = ListenTogether.transfer(memberId)
+
+    override fun connectWake(deviceId: String) = ListenTogether.wake(deviceId)
+
+    override fun connectSetVolume(volume: Double) = ListenTogether.setVolume(volume)
 
     @Composable
     override fun CastDialog(hazeState: HazeState, onDismiss: () -> Unit) =
@@ -221,6 +216,18 @@ private fun AudioOutputStatus.Snapshot.toOutputFormat(): OutputFormatUi {
     }
     return OutputFormatUi(summary = summary, carriesHiRes = carriesHiRes)
 }
+
+private fun ListenTogether.State.toConnectUi() = ConnectUi(
+    active = isConnect,
+    you = you,
+    members = members,
+    devices = devices,
+    outputId = output?.memberId,
+    isRemote = isRemote,
+    volume = playback.volume,
+    volumeControl = playback.volumeControl,
+    volumeSteps = playback.volumeSteps,
+)
 
 private fun ListenTogether.State.toPartyUi() = PartyUi(
     inParty = inParty,

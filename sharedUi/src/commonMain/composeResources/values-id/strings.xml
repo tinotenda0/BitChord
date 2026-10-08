@@ -203,4 +203,17 @@
 
     <string name="connect_playing_on">Diputar di %1$s</string>
     <string name="listen_together_remote_badge">Remote</string>
+    <string name="connect_devices_title">Perangkat</string>
+    <string name="connect_this_phone">%1$s (ponsel ini)</string>
+    <string name="connect_waking">Membangunkan %1$s…</string>
+    <string name="connect_this_phone_output">Output audio ponsel ini</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_playing">Diputar</string>
+    <string name="connect_in_a_jam">Sedang di Jam</string>
+    <string name="connect_asleep">Tidur · ketuk untuk memutar di sini</string>
+    <string name="connect_cant_wake">Tidur · buka BitChord di perangkat itu</string>
+    <string name="connect_app_desktop">BitChord untuk Windows</string>
+    <string name="connect_this_computer">%1$s (komputer ini)</string>
+    <string name="connect_this_computer_output">Output audio komputer ini</string>
 </resources>

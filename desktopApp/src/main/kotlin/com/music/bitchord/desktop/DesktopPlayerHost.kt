@@ -23,6 +23,7 @@ import com.music.bitchord.ui.player.LyricsTranslationResult
 import com.music.bitchord.ui.player.MAX_LYRICS_OFFSET_MS
 import com.music.bitchord.ui.player.MIN_LYRICS_OFFSET_MS
 import com.music.bitchord.ui.player.OutputFormatUi
+import com.music.bitchord.ui.player.ConnectUi
 import com.music.bitchord.ui.player.PartyUi
 import com.music.bitchord.ui.player.PlayerHost
 import com.music.bitchord.ui.player.PlayerSettingsSource
@@ -129,9 +130,36 @@ internal object DesktopPlayerHost : PlayerHost {
                 members = it.members,
                 you = it.you,
                 code = it.code,
+                isConnect = it.isConnect,
+                playingOn = it.output?.takeIf { _ -> it.isRemote }?.let { out -> out.deviceName.ifBlank { out.displayName } },
             )
         }
         .stateIn(scope, SharingStarted.Eagerly, PartyUi())
+
+    // Fork: Connect, for the shared device picker.
+    override val connect: StateFlow<ConnectUi> = DesktopListenTogether.state
+        .map {
+            ConnectUi(
+                active = it.isConnect,
+                you = it.you,
+                members = it.members,
+                devices = it.devices,
+                outputId = it.output?.memberId,
+                isRemote = it.isRemote,
+                volume = it.playback.volume,
+                volumeControl = it.playback.volumeControl,
+                volumeSteps = it.playback.volumeSteps,
+            )
+        }
+        .stateIn(scope, SharingStarted.Eagerly, ConnectUi())
+
+    override fun connectTransfer(memberId: String) = DesktopListenTogether.transfer(memberId)
+
+    override fun connectWake(deviceId: String) = DesktopListenTogether.wake(deviceId)
+
+    override fun connectSetVolume(volume: Double) = DesktopListenTogether.setVolume(volume)
+
+    override val isComputer: Boolean get() = true
 
     override suspend fun translateLyrics(
         trackId: String,

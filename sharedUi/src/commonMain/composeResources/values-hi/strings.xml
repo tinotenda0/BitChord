@@ -203,4 +203,17 @@
 
     <string name="connect_playing_on">%1$s पर चल रहा है</string>
     <string name="listen_together_remote_badge">रिमोट</string>
+    <string name="connect_devices_title">डिवाइस</string>
+    <string name="connect_this_phone">%1$s (यह फ़ोन)</string>
+    <string name="connect_waking">%1$s को जगाया जा रहा है…</string>
+    <string name="connect_this_phone_output">इस फ़ोन का ऑडियो आउटपुट</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_playing">चल रहा है</string>
+    <string name="connect_in_a_jam">जैम में</string>
+    <string name="connect_asleep">सो रहा है · यहां चलाने के लिए टैप करें</string>
+    <string name="connect_cant_wake">सो रहा है · उस पर BitChord खोलें</string>
+    <string name="connect_app_desktop">Windows के लिए BitChord</string>
+    <string name="connect_this_computer">%1$s (यह कंप्यूटर)</string>
+    <string name="connect_this_computer_output">इस कंप्यूटर का ऑडियो आउटपुट</string>
 </resources>

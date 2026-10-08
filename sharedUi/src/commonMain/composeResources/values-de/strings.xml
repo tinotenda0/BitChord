@@ -203,4 +203,17 @@
 
     <string name="connect_playing_on">Wird auf %1$s abgespielt</string>
     <string name="listen_together_remote_badge">Fernbedienung</string>
+    <string name="connect_devices_title">Geräte</string>
+    <string name="connect_this_phone">%1$s (dieses Handy)</string>
+    <string name="connect_waking">%1$s wird geweckt…</string>
+    <string name="connect_this_phone_output">Audioausgabe dieses Handys</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_playing">Wird abgespielt</string>
+    <string name="connect_in_a_jam">In einer Jam</string>
+    <string name="connect_asleep">Schläft · tippen, um hier abzuspielen</string>
+    <string name="connect_cant_wake">Schläft · öffne BitChord darauf</string>
+    <string name="connect_app_desktop">BitChord für Windows</string>
+    <string name="connect_this_computer">%1$s (dieser Computer)</string>
+    <string name="connect_this_computer_output">Audioausgabe dieses Computers</string>
 </resources>

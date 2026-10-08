@@ -771,7 +771,7 @@ fun NowPlayingScreen(
     // phone's speaker and headphones, so the same button asks that first. See
     // [ConnectDevicesSheet], whose last row is this phone's outputs.
     val openOutputOrDevices: () -> Unit = {
-        if (PlayerPlatform.host.hasConnectDevices()) showConnectDevices = true else openAudioOutput()
+        if (PlayerPlatform.host.connect.value.hasOtherDevices) showConnectDevices = true else openAudioOutput()
     }
     // Listening in a party whose host has taken the controls: the transport
     // keeps only play/pause, which from here moves this device alone.
@@ -1542,7 +1542,7 @@ fun NowPlayingScreen(
             )
         }
         if (showConnectDevices) {
-            PlayerPlatform.host.ConnectDevicesSheet(
+            ConnectDevicesSheet(
                 hazeState = playerHaze,
                 onDismiss = { showConnectDevices = false },
                 onThisDeviceOutput = {

@@ -203,4 +203,17 @@
 
     <string name="connect_playing_on">Играет на %1$s</string>
     <string name="listen_together_remote_badge">Пульт</string>
+    <string name="connect_devices_title">Устройства</string>
+    <string name="connect_this_phone">%1$s (этот телефон)</string>
+    <string name="connect_waking">Пробуждаем %1$s…</string>
+    <string name="connect_this_phone_output">Аудиовыход этого телефона</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_playing">Играет</string>
+    <string name="connect_in_a_jam">В джеме</string>
+    <string name="connect_asleep">Спит · нажмите, чтобы играть здесь</string>
+    <string name="connect_cant_wake">Спит · откройте на нём BitChord</string>
+    <string name="connect_app_desktop">BitChord для Windows</string>
+    <string name="connect_this_computer">%1$s (этот компьютер)</string>
+    <string name="connect_this_computer_output">Аудиовыход этого компьютера</string>
 </resources>

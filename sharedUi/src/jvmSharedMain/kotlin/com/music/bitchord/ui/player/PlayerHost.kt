@@ -1,5 +1,6 @@
 package com.music.bitchord.ui.player
 
+import com.music.bitchord.data.listentogether.ConnectDevice
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
@@ -91,14 +92,22 @@ interface PlayerHost {
 
     /** Casting to a network receiver. Absent, and so never drawn, where the platform has none. */
     /**
-     * Fork: whether another of this account's Connect devices is around, in
-     * which case the output button asks which device before which speaker.
+     * Fork: this account's Connect party, as the device picker draws it. A
+     * platform without Connect leaves it inactive and the picker never opens.
      */
-    fun hasConnectDevices(): Boolean = false
+    val connect: StateFlow<ConnectUi> get() = NoConnect
 
-    /** Fork: the Connect device picker; its last row is this device's own outputs. */
-    @Composable
-    fun ConnectDevicesSheet(hazeState: HazeState, onDismiss: () -> Unit, onThisDeviceOutput: () -> Unit) = Unit
+    /** Fork, Connect: move playback to another of this account's devices. */
+    fun connectTransfer(memberId: String) = Unit
+
+    /** Fork, Connect: move playback to a device that is asleep. */
+    fun connectWake(deviceId: String) = Unit
+
+    /** Fork, Connect: ask the device playing to play at [volume], 0 to 1. */
+    fun connectSetVolume(volume: Double) = Unit
+
+    /** Fork: a computer rather than a phone, for the device picker's wording. */
+    val isComputer: Boolean get() = false
 
     val castState: StateFlow<CastUi> get() = NoCast
 
@@ -121,6 +130,37 @@ interface PlayerHost {
 }
 
 private val NoCast = MutableStateFlow(CastUi())
+
+private val NoConnect = MutableStateFlow(ConnectUi())
+
+/** Fork: Connect as the device picker needs it. See [PlayerHost.connect]. */
+data class ConnectUi(
+    /** In this account's Connect party. */
+    val active: Boolean = false,
+    val you: PartyMember? = null,
+    val members: List<PartyMember> = emptyList(),
+    /** Every device the server remembers for the account, asleep ones included. */
+    val devices: List<ConnectDevice> = emptyList(),
+    /** The member the music is coming out of. */
+    val outputId: String? = null,
+    /** This device drives the music without playing it. */
+    val isRemote: Boolean = false,
+    /** The output's volume as it last reported it, 0 to 1; null before it has. */
+    val volume: Double? = null,
+    /** Whether the output lets other devices change its volume. */
+    val volumeControl: Boolean = false,
+    val volumeSteps: Int = 15,
+) {
+    /**
+     * Another of the account's devices is around, so the output button asks
+     * which device before which speaker.
+     */
+    val hasOtherDevices: Boolean
+        get() = active && (
+            members.any { it.connected && it.memberId != you?.memberId } ||
+                devices.any { it.deviceKey != you?.deviceKey || it.app != you?.app }
+            )
+}
 
 /** What the output drawer needs to know about casting to draw its row. */
 data class CastUi(

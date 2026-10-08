@@ -203,4 +203,17 @@
 
     <string name="connect_playing_on">מתנגן ב־%1$s</string>
     <string name="listen_together_remote_badge">שלט</string>
+    <string name="connect_devices_title">מכשירים</string>
+    <string name="connect_this_phone">%1$s (הטלפון הזה)</string>
+    <string name="connect_waking">מעיר את %1$s…</string>
+    <string name="connect_this_phone_output">פלט השמע של הטלפון הזה</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_playing">מתנגן</string>
+    <string name="connect_in_a_jam">בג׳אם</string>
+    <string name="connect_asleep">במצב שינה · הקש כדי לנגן כאן</string>
+    <string name="connect_cant_wake">במצב שינה · פתח בו את BitChord</string>
+    <string name="connect_app_desktop">BitChord ל-Windows</string>
+    <string name="connect_this_computer">%1$s (המחשב הזה)</string>
+    <string name="connect_this_computer_output">פלט השמע של המחשב הזה</string>
 </resources>

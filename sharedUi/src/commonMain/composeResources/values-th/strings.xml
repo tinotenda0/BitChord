@@ -203,4 +203,17 @@
 
     <string name="connect_playing_on">กำลังเล่นบน %1$s</string>
     <string name="listen_together_remote_badge">รีโมต</string>
+    <string name="connect_devices_title">อุปกรณ์</string>
+    <string name="connect_this_phone">%1$s (โทรศัพท์นี้)</string>
+    <string name="connect_waking">กำลังปลุก %1$s…</string>
+    <string name="connect_this_phone_output">เอาต์พุตเสียงของโทรศัพท์นี้</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_playing">กำลังเล่น</string>
+    <string name="connect_in_a_jam">อยู่ใน Jam</string>
+    <string name="connect_asleep">หลับอยู่ · แตะเพื่อเล่นที่นี่</string>
+    <string name="connect_cant_wake">หลับอยู่ · เปิด BitChord บนเครื่องนั้น</string>
+    <string name="connect_app_desktop">BitChord สำหรับ Windows</string>
+    <string name="connect_this_computer">%1$s (คอมพิวเตอร์เครื่องนี้)</string>
+    <string name="connect_this_computer_output">เอาต์พุตเสียงของคอมพิวเตอร์เครื่องนี้</string>
 </resources>

@@ -203,4 +203,17 @@
 
     <string name="connect_playing_on">Odtwarzanie na %1$s</string>
     <string name="listen_together_remote_badge">Pilot</string>
+    <string name="connect_devices_title">Urządzenia</string>
+    <string name="connect_this_phone">%1$s (ten telefon)</string>
+    <string name="connect_waking">Wybudzanie %1$s…</string>
+    <string name="connect_this_phone_output">Wyjście audio tego telefonu</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_playing">Odtwarzanie</string>
+    <string name="connect_in_a_jam">W Jamie</string>
+    <string name="connect_asleep">Uśpione · dotknij, aby odtwarzać tutaj</string>
+    <string name="connect_cant_wake">Uśpione · otwórz na nim BitChord</string>
+    <string name="connect_app_desktop">BitChord dla Windows</string>
+    <string name="connect_this_computer">%1$s (ten komputer)</string>
+    <string name="connect_this_computer_output">Wyjście audio tego komputera</string>
 </resources>

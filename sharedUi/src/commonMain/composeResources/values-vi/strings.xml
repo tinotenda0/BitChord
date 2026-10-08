@@ -203,4 +203,17 @@
 
     <string name="connect_playing_on">Đang phát trên %1$s</string>
     <string name="listen_together_remote_badge">Điều khiển</string>
+    <string name="connect_devices_title">Thiết bị</string>
+    <string name="connect_this_phone">%1$s (điện thoại này)</string>
+    <string name="connect_waking">Đang đánh thức %1$s…</string>
+    <string name="connect_this_phone_output">Đầu ra âm thanh của điện thoại này</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_playing">Đang phát</string>
+    <string name="connect_in_a_jam">Đang trong Jam</string>
+    <string name="connect_asleep">Đang ngủ · chạm để phát ở đây</string>
+    <string name="connect_cant_wake">Đang ngủ · hãy mở BitChord trên máy đó</string>
+    <string name="connect_app_desktop">BitChord cho Windows</string>
+    <string name="connect_this_computer">%1$s (máy tính này)</string>
+    <string name="connect_this_computer_output">Đầu ra âm thanh của máy tính này</string>
 </resources>

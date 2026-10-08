@@ -203,4 +203,17 @@
 
     <string name="connect_playing_on">正在 %1$s 上播放</string>
     <string name="listen_together_remote_badge">遥控器</string>
+    <string name="connect_devices_title">设备</string>
+    <string name="connect_this_phone">%1$s（这台手机）</string>
+    <string name="connect_waking">正在唤醒 %1$s…</string>
+    <string name="connect_this_phone_output">这台手机的音频输出</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_playing">正在播放</string>
+    <string name="connect_in_a_jam">正在 Jam 中</string>
+    <string name="connect_asleep">休眠中 · 点按以在此播放</string>
+    <string name="connect_cant_wake">休眠中 · 请在该设备上打开 BitChord</string>
+    <string name="connect_app_desktop">BitChord Windows 版</string>
+    <string name="connect_this_computer">%1$s（本电脑）</string>
+    <string name="connect_this_computer_output">本电脑的音频输出</string>
 </resources>

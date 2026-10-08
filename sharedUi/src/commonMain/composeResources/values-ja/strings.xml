@@ -203,4 +203,17 @@
 
     <string name="connect_playing_on">%1$s で再生中</string>
     <string name="listen_together_remote_badge">リモコン</string>
+    <string name="connect_devices_title">デバイス</string>
+    <string name="connect_this_phone">%1$s（この端末）</string>
+    <string name="connect_waking">%1$s を起動しています…</string>
+    <string name="connect_this_phone_output">この端末の音声出力</string>
+    <string name="connect_app_prod">BitChord</string>
+    <string name="connect_app_dev">BitChord Dev</string>
+    <string name="connect_playing">再生中</string>
+    <string name="connect_in_a_jam">Jam に参加中</string>
+    <string name="connect_asleep">スリープ中 · タップしてここで再生</string>
+    <string name="connect_cant_wake">スリープ中 · その端末で BitChord を開いてください</string>
+    <string name="connect_app_desktop">BitChord for Windows</string>
+    <string name="connect_this_computer">%1$s（このパソコン）</string>
+    <string name="connect_this_computer_output">このパソコンのオーディオ出力</string>
 </resources>
