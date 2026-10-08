@@ -17,6 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -48,6 +49,7 @@ class PartyRemotePlayer(
 
     private val handler = Handler(looper)
     private var watcher: Job? = null
+    private var artwork: Job? = null
 
     /** Commands sent and not yet answered, by the party seq they were sent at. */
     private val pending = mutableListOf<Pair<Long, SettableFuture<Any?>>>()
@@ -69,6 +71,9 @@ class PartyRemotePlayer(
                     settlePending()
                     invalidateState()
                 }
+        }
+        artwork = scope.launch(Dispatchers.Main) {
+            MissingArtwork.revision.drop(1).collect { invalidateState() }
         }
     }
 
@@ -127,7 +132,7 @@ class PartyRemotePlayer(
 
     private fun playlistFor(party: ListenTogether.State): List<MediaItemData> {
         val source = remotePlaylist(party)
-        val key = source
+        val key = source to MissingArtwork.revision.value
         if (key != playlistKey) {
             playlistKey = key
             tracks = source
@@ -300,6 +305,8 @@ class PartyRemotePlayer(
     override fun handleRelease(): ListenableFuture<*> {
         watcher?.cancel()
         watcher = null
+        artwork?.cancel()
+        artwork = null
         settlePending(all = true)
         return Futures.immediateVoidFuture()
     }

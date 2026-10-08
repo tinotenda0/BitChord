@@ -900,6 +900,9 @@ class PlaybackService : MediaLibraryService() {
                 swappingMediaId = null
                 return
             }
+            // Fork: the same song with a cover written into it, see
+            // [patchMissingArtwork]. Not the queue moving on either.
+            if (patchingArtwork && reason == Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED) return
 
             // No crossfade case to allow for here any more. A blended advance
             // never reaches this callback — the incoming track starts as the
@@ -1018,6 +1021,9 @@ class PlaybackService : MediaLibraryService() {
             val exoPlayer = player ?: return
             if (exoPlayer.isPlaying) prefetchAround(exoPlayer)
             if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
+                // A party's running order arriving is a queue change, not a
+                // track change, and can bring tracks with no cover.
+                if (!patchingArtwork) prefetchMissingArtwork(exoPlayer)
                 saveQueueSnapshot(exoPlayer)
                 refreshCustomLayouts()
                 // Queue edits can remove AutoPlay's whole tail while leaving
@@ -1575,7 +1581,10 @@ class PlaybackService : MediaLibraryService() {
         connectVolume = ConnectVolume(this, scope).also { it.start() }
         // Fork: the widget redraws once a cover it was missing is found.
         scope.launch {
-            MissingArtwork.revision.drop(1).collect { publishWidgetState() }
+            MissingArtwork.revision.drop(1).collect {
+                patchMissingArtwork()
+                publishWidgetState()
+            }
         }
         // AutoPlay has one shared supplier in a party. The host supplies it
         // while connected; if they disappear, the lowest stable connected member
@@ -2969,6 +2978,7 @@ class PlaybackService : MediaLibraryService() {
         lookForBetterCopy(exoPlayer)
         // Covers crossfades too: a blended advance never reaches
         // onMediaItemTransition, and [adoptPlayer] calls this handler by hand.
+        prefetchMissingArtwork(exoPlayer)
         publishWidgetState()
         loadLyricsForCurrentTrack()
         if (exoPlayer.isPlaying) startLyricsTicker()
@@ -3600,6 +3610,54 @@ class PlaybackService : MediaLibraryService() {
      * queue actually moving on. Cleared by the transition it describes.
      */
     private var swappingMediaId: String? = null
+
+    /** True only while [patchMissingArtwork] is replacing an item; see onMediaItemTransition. */
+    private var patchingArtwork = false
+
+    /**
+     * Fork: writes covers that have since been found into the tracks around the
+     * playhead that went into the queue without one.
+     *
+     * A track a party hands over can arrive with no cover (its sender only had
+     * a file of one), and what the lock screen, the notification and Android
+     * Auto draw is the item's own artwork, fixed when it was queued. The cover
+     * is looked up as the track nears ([prefetchMissingArtwork]) and put back
+     * into the item here. Same uri, so Media3 updates the item in place rather
+     * than reloading it, and the playing one carries on undisturbed.
+     */
+    private fun patchMissingArtwork() {
+        val exo = player ?: return
+        if (exo.mediaItemCount == 0) return
+        val from = exo.currentMediaItemIndex.coerceAtLeast(0)
+        val to = (from + ARTWORK_AHEAD).coerceAtMost(exo.mediaItemCount - 1)
+        for (i in from..to) {
+            val item = exo.getMediaItemAt(i)
+            if (item.mediaMetadata.artworkUri != null) continue
+            val cover = MissingArtwork.known(item.mediaId)?.artworkAt(NOTIFICATION_ART_PX) ?: continue
+            val patched = item.buildUpon()
+                .setMediaMetadata(item.mediaMetadata.buildUpon().setArtworkUri(cover.toUri()).build())
+                .build()
+            patchingArtwork = true
+            try {
+                exo.replaceMediaItem(i, patched)
+            } finally {
+                patchingArtwork = false
+            }
+        }
+    }
+
+    /** Asks for the covers [patchMissingArtwork] will need, for the few tracks nearest the playhead. */
+    private fun prefetchMissingArtwork(exo: Player) {
+        if (exo.mediaItemCount == 0) return
+        val from = exo.currentMediaItemIndex.coerceAtLeast(0)
+        val to = (from + ARTWORK_AHEAD).coerceAtMost(exo.mediaItemCount - 1)
+        MissingArtwork.prefetch(
+            (from..to).map { exo.getMediaItemAt(it) }
+                .filter { it.mediaMetadata.artworkUri == null }
+                .map { it.toSong() },
+        )
+        patchMissingArtwork()
+    }
 
     /**
      * When the audio was last cut for a quality swap, so the analytics listener
@@ -7554,6 +7612,8 @@ class PlaybackService : MediaLibraryService() {
             .build()
 
     private companion object {
+        /** How many tracks past the playing one get a missing cover looked up and written in. */
+        const val ARTWORK_AHEAD = 10
         const val MEDIA_ROOT_ID = "root"
         const val MEDIA_RECENTS_ID = "recents"
         const val MEDIA_QUICK_PICKS_ID = "quick_picks"
