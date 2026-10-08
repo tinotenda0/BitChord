@@ -234,7 +234,7 @@ private fun DeviceRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(ROW_SHAPE)
+            .clip(CONNECT_ROW_SHAPE)
             .background(Color.White.copy(alpha = if (lit) 0.12f else 0.05f))
             .then(
                 if (onClick != null) {
@@ -318,7 +318,7 @@ private fun RemoteVolume(volume: Double, steps: Int) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(ROW_SHAPE)
+            .clip(CONNECT_ROW_SHAPE)
             .background(Color.White.copy(alpha = 0.05f))
             .padding(horizontal = 14.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -362,3 +362,6 @@ private fun RemoteVolume(volume: Double, steps: Int) {
 
 private const val VOLUME_SEND_MS = 120L
 private const val VOLUME_SETTLE_MS = 1_500L
+
+/** The player drawer's row shape (PlayerDrawer's ROW_SHAPE, internal to sharedUi). */
+private val CONNECT_ROW_SHAPE = androidx.compose.foundation.shape.RoundedCornerShape(16.dp)

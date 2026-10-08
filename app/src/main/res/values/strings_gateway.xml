@@ -42,7 +42,7 @@
     <string name="spotify_import">Import Spotify history</string>
     <string name="spotify_import_subtitle">From Spotify\'s Download your data export: the zip, or the JSON files in it</string>
     <string name="spotify_import_reading">Reading the export…</string>
-    <string name="spotify_import_matching">Matching songs: %1$d of %2$d · keep BitChord open</string>
+    <string name="gateway_spotify_import_matching">Matching songs: %1$d of %2$d · keep BitChord open</string>
     <string name="spotify_import_uploading">Adding listens: %1$d of %2$d</string>
     <plurals name="spotify_import_added">
         <item quantity="one">Added %1$s listen</item>
@@ -52,7 +52,7 @@
         <item quantity="one">%1$s was already in</item>
         <item quantity="other">%1$s were already in</item>
     </plurals>
-    <plurals name="spotify_import_unmatched">
+    <plurals name="gateway_spotify_import_unmatched">
         <item quantity="one">%1$s song not found</item>
         <item quantity="other">%1$s songs not found</item>
     </plurals>

@@ -116,7 +116,7 @@ private fun SpotifyImportRow() {
         title = stringResource(R.string.spotify_import),
         subtitle = when (val s = state) {
             SpotifyImport.State.Reading -> stringResource(R.string.spotify_import_reading)
-            is SpotifyImport.State.Matching -> stringResource(R.string.spotify_import_matching, s.done, s.total)
+            is SpotifyImport.State.Matching -> stringResource(R.string.gateway_spotify_import_matching, s.done, s.total)
             is SpotifyImport.State.Uploading -> stringResource(R.string.spotify_import_uploading, s.done, s.total)
             is SpotifyImport.State.Finished -> finishedText(s)
             is SpotifyImport.State.Failed -> s.message
@@ -176,7 +176,7 @@ private fun finishedText(state: SpotifyImport.State.Finished): String {
             add(pluralStringResource(R.plurals.spotify_import_already, state.already, grouped(state.already.toLong())))
         }
         if (state.unmatched > 0) {
-            add(pluralStringResource(R.plurals.spotify_import_unmatched, state.unmatched, grouped(state.unmatched.toLong())))
+            add(pluralStringResource(R.plurals.gateway_spotify_import_unmatched, state.unmatched, grouped(state.unmatched.toLong())))
         }
     }
     return parts.joinToString(" · ")
