@@ -972,9 +972,9 @@ fun BitChordDesktopApp() {
     fun enqueue(song: Song, next: Boolean) {
         val party = DesktopListenTogether.state.value
         if (party.controlsLocked) return
-        if (party.inParty && liveQueue.upcoming.size >= DesktopPartySync.MAX_PARTY_UPCOMING_QUEUE) {
+        if (party.inParty && liveQueue.upcoming.size >= party.maxUpcoming) {
             DesktopPlayerHost.showMessage(
-                "Queue is full (maximum ${DesktopPartySync.MAX_PARTY_UPCOMING_QUEUE} songs in party)",
+                "Queue is full (maximum ${party.maxUpcoming} songs in party)",
             )
             return
         }

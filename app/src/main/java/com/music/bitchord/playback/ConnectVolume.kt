@@ -132,25 +132,3 @@ class ConnectVolume(private val context: Context, private val scope: CoroutineSc
         const val TAG = "ConnectVolume"
     }
 }
-
-/** What the output does with the party's volume request state. See [nextVolumeStep]. */
-internal data class VolumeStep(val applied: Long, val target: Double?, val fresh: Boolean)
-
-/**
- * Which volume request, if any, the output should act on now.
- *
- * Requests are numbered and acted on once each. The output's own reports never
- * appear here, which is the point: when reports and requests shared one value,
- * a report of an older level overwrote a newer request and was then applied as
- * though it were one, and the volume bounced between the two.
- *
- * [applied] below zero means the device has just become the output (or got back
- * in touch): requests made before then were for another device, so they are
- * taken as read rather than acted on. A count lower than [applied] is a server
- * that restarted and began counting again, which is treated the same way.
- */
-internal fun nextVolumeStep(applied: Long, reqSeq: Long, target: Double?, allowed: Boolean): VolumeStep = when {
-    applied < 0 || reqSeq < applied -> VolumeStep(reqSeq, null, fresh = true)
-    reqSeq > applied -> VolumeStep(reqSeq, target?.takeIf { allowed }, fresh = false)
-    else -> VolumeStep(applied, null, fresh = false)
-}

@@ -5,6 +5,10 @@ import com.music.bitchord.data.listentogether.partyQueueIndexOf
 import com.music.bitchord.data.listentogether.partyUpcomingAfter
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.QueueTier
+import com.music.bitchord.playback.mayFollow
+import com.music.bitchord.playback.nextVolumeStep
+import com.music.bitchord.playback.shouldCatchUpOnReconnect
+import com.music.bitchord.playback.shouldSeedEmptyParty
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -82,6 +86,20 @@ internal class DesktopPartySync(
     private var pendingIntentVideoId: String? = null
 
     /**
+     * Fork: the party went quiet while this device was in it (socket down, or
+     * not yet welcomed). On the way back the device playing tells the party
+     * where it got to rather than being dragged back to where it was.
+     */
+    private var outOfTouch = false
+    /** Fork: the clock's last measured report, so it goes out every few seconds rather than every tick. */
+    private var lastClockReportMs = 0L
+    /** Fork: the last Connect volume request acted on; below zero until this device is the output. */
+    private var appliedVolumeRequest = -1L
+    private var lastReportedVolume: Float? = null
+    /** Fork: whether this device has been made a remote and so silenced its own player. */
+    private var silencedForRemote = false
+
+    /**
      * Until when inbound reconciliation is held off.
      *
      * A control this device issued takes a moment to come back as a state frame; without a quiet
@@ -141,12 +159,19 @@ internal class DesktopPartySync(
         lastPartyCode = null
         appliedAutoplay = null
         pendingIntentVideoId = null
+        outOfTouch = false
+        appliedVolumeRequest = -1L
+        lastReportedVolume = null
+        silencedForRemote = false
     }
 
     /** Something the listener asked for here, which the party should be told about. */
     fun onLocalIntent(expectedVideoId: String? = null) {
         val party = DesktopListenTogether.state.value
         if (!party.inParty || party.controlsLocked) return
+        // Fork: a remote's controls go to the party from the player screen;
+        // nothing done to this computer's own player is the party's business.
+        if (party.isRemote) return
         // Queue/transport gestures can arrive while a preceding song selection is still loading.
         // Keep waiting for that selection rather than letting the later gesture cancel its guard.
         val waitForVideoId = expectedVideoId
@@ -202,14 +227,47 @@ internal class DesktopPartySync(
     /** Puts this device where the party is, writing to the engine rather than through intents. */
     fun reconcile() {
         val party = DesktopListenTogether.state.value
+        DesktopListenTogether.localPlaybackActive = engine.state.value.isPlaying && !party.isRemote
         if (!party.inParty) {
             loadingVideoId = null
             locallyPaused = false
             appliedAutoplay = null
+            outOfTouch = false
+            silencedForRemote = false
+            appliedVolumeRequest = -1L
             return
         }
+        // Fork: a remote drives the party from the player screen and plays
+        // nothing itself. Its own player is paused once, on becoming one, and
+        // otherwise left alone.
+        if (party.isRemote) {
+            if (!silencedForRemote) {
+                silencedForRemote = true
+                if (engine.state.value.isPlaying) engine.pause()
+            }
+            appliedVolumeRequest = -1L
+            return
+        }
+        silencedForRemote = false
         if (!party.controlsLocked) locallyPaused = false
         if (nowMs() < quietUntilMs) return
+        // Fork: not hearing from the party, what is held is the last thing
+        // heard and it goes stale by the second. Following it anyway is what
+        // dragged a device back to the same song, part way in, over and over.
+        if (!mayFollow(party)) {
+            outOfTouch = true
+            return
+        }
+        if (outOfTouch) {
+            outOfTouch = false
+            val here = engine.state.value
+            if (shouldCatchUpOnReconnect(party, here.song?.videoId, here.isPlaying)) {
+                DesktopTrackLog.log("party: back in touch and ahead of it; telling it where this computer is")
+                onLocalIntent()
+                return
+            }
+        }
+        if (party.isConnect) followVolume(party)
         val target = party.playback
         if (target.autoplayEnabled != appliedAutoplay) {
             appliedAutoplay = target.autoplayEnabled
@@ -218,8 +276,10 @@ internal class DesktopPartySync(
         val track = target.track
         if (track == null) {
             // A newly created party is empty. Its host seeds it with the music already playing;
-            // listeners never race the host for that first state.
-            if (party.you?.isHost == true && party.connection == DesktopListenTogether.Connection.LIVE) publish()
+            // listeners never race the host for that first state. Fork: in Connect only a device
+            // that is actually playing may, so one left idle can't push its old queue over the
+            // device in use (see shouldSeedEmptyParty).
+            if (shouldSeedEmptyParty(party, playing = engine.state.value.isPlaying)) publish()
             return
         }
         val playback = engine.state.value
@@ -275,6 +335,25 @@ internal class DesktopPartySync(
 
         if (want == null) return
         val drift = playback.positionMs - want
+        // Fork: the clock never corrects towards the party. It tells the party where it really
+        // is and the server moves everyone else; only a real control moves it.
+        if (party.isClock) {
+            if (target.seq != alignedSeq) {
+                alignedSeq = target.seq
+                if (abs(drift) > DRIFT_LIMIT_MS) {
+                    DesktopTrackLog.log("party: aligning ${drift}ms onto control ${target.seq}")
+                    engine.seekTo(want)
+                    return
+                }
+            }
+            driftStrikes = 0
+            val now = nowMs()
+            if (now - lastClockReportMs >= CLOCK_REPORT_MS) {
+                lastClockReportMs = now
+                DesktopListenTogether.reportMeasured(track.videoId, playback.positionMs, playback.durationMs)
+            }
+            return
+        }
         val now = nowMs()
         val decision = decideSeek(
             drift = drift,
@@ -305,14 +384,37 @@ internal class DesktopPartySync(
         val currentId = songs.getOrNull(index)?.videoId ?: return
         if (partyQueueIndexOf(party.queue, party.playback, currentId) < 0) return
         applyPartyUpcoming(
-            partyUpcomingAfter(party.queue, party.playback, currentId).take(MAX_PARTY_UPCOMING_QUEUE),
+            partyUpcomingAfter(party.queue, party.playback, currentId).take(party.maxUpcoming),
         )
+    }
+
+    /**
+     * Fork: Connect's volume. Requests from the account's other devices are
+     * acted on once each (see nextVolumeStep), and this computer's own level is
+     * reported back whenever it changes, so their sliders show it.
+     */
+    private fun followVolume(party: DesktopListenTogether.State) {
+        val isOutput = party.output?.memberId == party.you?.memberId
+        if (!isOutput) {
+            appliedVolumeRequest = -1L
+            lastReportedVolume = null
+            return
+        }
+        val shared = party.playback
+        val step = nextVolumeStep(appliedVolumeRequest, shared.volumeReqSeq, shared.volumeTarget, allowed = true)
+        appliedVolumeRequest = step.applied
+        step.target?.let { engine.setVolume(it.toFloat()) }
+        val level = engine.state.value.volume
+        if (level != lastReportedVolume) {
+            lastReportedVolume = level
+            DesktopListenTogether.reportVolume(level.toDouble())
+        }
     }
 
     /** Tells the party what this device just did. */
     private fun publish() {
         val party = DesktopListenTogether.state.value
-        if (!party.inParty) return
+        if (!party.inParty || party.isRemote) return
         val playback = engine.state.value
         // Unlike ExoPlayer, the desktop state cannot represent "play when ready" while a stream
         // is still resolving: it temporarily reads as paused. Wait for the decoder so creating a
@@ -333,6 +435,7 @@ internal class DesktopPartySync(
             currentIndex = index,
             currentVideoId = song.videoId,
             currentDurationMs = playback.durationMs,
+            maxUpcoming = party.maxUpcoming,
         )
         // Compared from the playing track on, by the tracks and their sections. Not by the party
         // queue's index, which only moves when the queue is resent and so read as different after
@@ -447,6 +550,8 @@ internal class DesktopPartySync(
         const val PUBLISH_WAIT_ATTEMPTS = 100
         const val RECONCILE_INTERVAL_MS = 700L
         const val MAX_PARTY_UPCOMING_QUEUE = 25
+        /** Fork: how often the clock tells the party where it really is. */
+        const val CLOCK_REPORT_MS = 2_000L
 
         /** The same queue projection Android publishes to a party. */
         internal fun queueForPartyPublish(
@@ -454,28 +559,23 @@ internal class DesktopPartySync(
             currentIndex: Int,
             currentVideoId: String,
             currentDurationMs: Long,
+            maxUpcoming: Int = MAX_PARTY_UPCOMING_QUEUE,
         ): Pair<List<PartyTrack>, Int> {
             val raw = songs.withIndex()
                 .filter { (_, song) -> song.localPath == null && song.localUri == null }
-            val rawCurrent = raw.indexOfFirst { (originalIndex, song) ->
-                originalIndex == currentIndex && song.videoId == currentVideoId
-            }.takeIf { it >= 0 } ?: raw.indexOfFirst { it.value.videoId == currentVideoId }
-
-            val withoutContextTail = if (rawCurrent >= 0) {
-                raw.take(rawCurrent + 1) + raw.drop(rawCurrent + 1)
-                    .filter { it.value.queueTier != QueueTier.CONTEXT }
-            } else {
-                raw.filter { it.value.queueTier != QueueTier.CONTEXT }
-            }
+            // Fork: the album or playlist being played is part of what the party plays. Leaving
+            // it out made the party's queue the current song alone, which AutoPlay then filled
+            // with songs like it, and every device trimmed its own playlist to match.
+            val withoutContextTail = raw
             val projectedCurrent = withoutContextTail.indexOfFirst { (originalIndex, song) ->
                 originalIndex == currentIndex && song.videoId == currentVideoId
             }.takeIf { it >= 0 }
                 ?: withoutContextTail.indexOfFirst { it.value.videoId == currentVideoId }
             val endExclusive = if (projectedCurrent >= 0) {
-                (projectedCurrent + 1 + MAX_PARTY_UPCOMING_QUEUE)
+                (projectedCurrent + 1 + maxUpcoming)
                     .coerceAtMost(withoutContextTail.size)
             } else {
-                (1 + MAX_PARTY_UPCOMING_QUEUE).coerceAtMost(withoutContextTail.size)
+                (1 + maxUpcoming).coerceAtMost(withoutContextTail.size)
             }
             val tracks = withoutContextTail.take(endExclusive).map { (_, queued) ->
                 queued.toPartyTrack(
@@ -495,6 +595,7 @@ internal fun Song.toPartyTrack(durationMs: Long): PartyTrack = PartyTrack(
     thumbnailUrl = thumbnailUrl,
     durationMs = durationMs.takeIf { it > 0 },
     fromAutoplay = queueTier == QueueTier.AUTOPLAY,
+    fromContext = queueTier == QueueTier.CONTEXT,
 )
 
 /**
@@ -511,5 +612,9 @@ internal fun PartyTrack.toDesktopSong(): Song = Song(
         val total = ms / 1000
         "%d:%02d".format(total / 60, total % 60)
     },
-    queueTier = if (fromAutoplay) QueueTier.AUTOPLAY else QueueTier.USER_QUEUE,
+    queueTier = when {
+        fromAutoplay -> QueueTier.AUTOPLAY
+        fromContext -> QueueTier.CONTEXT
+        else -> QueueTier.USER_QUEUE
+    },
 )

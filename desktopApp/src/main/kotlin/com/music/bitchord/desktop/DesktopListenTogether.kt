@@ -1,6 +1,11 @@
 package com.music.bitchord.desktop
 
 import com.music.bitchord.data.listentogether.ApiError
+import com.music.bitchord.data.listentogether.ConnectDevice
+import com.music.bitchord.data.listentogether.ConnectRequest
+import com.music.bitchord.data.listentogether.DEFAULT_MAX_UPCOMING
+import com.music.bitchord.data.listentogether.KIND_JAM
+import com.music.bitchord.data.listentogether.PartyView
 import com.music.bitchord.data.listentogether.JoinRequest
 import com.music.bitchord.data.listentogether.JamInvite
 import com.music.bitchord.data.listentogether.PartyActivity
@@ -87,23 +92,27 @@ internal object DesktopListenTogether {
     )
 
     data class State(
-        val code: String? = null,
-        val you: PartyMember? = null,
-        val members: List<PartyMember> = emptyList(),
+        override val code: String? = null,
+        /** Fork: a jam, or this account's Connect party. */
+        override val kind: String = KIND_JAM,
+        /** Fork, Connect only: this account's devices, including the ones asleep. */
+        val devices: List<ConnectDevice> = emptyList(),
+        val maxUpcoming: Int = DEFAULT_MAX_UPCOMING,
+        override val you: PartyMember? = null,
+        override val members: List<PartyMember> = emptyList(),
         val maxMembers: Int = 5,
-        val hostOnlyControl: Boolean = false,
-        val playback: PartyPlayback = PartyPlayback(),
+        override val hostOnlyControl: Boolean = false,
+        override val playback: PartyPlayback = PartyPlayback(),
         /** Held apart from [playback]: the state frame carries only a sequence number for it. */
-        val queue: PartyQueue = PartyQueue(),
+        override val queue: PartyQueue = PartyQueue(),
         val connection: Connection = Connection.OFFLINE,
         /** False until the first round trip; the playhead is a guess until then. */
         val clockSynced: Boolean = false,
         val roundTripMs: Long = 0,
         val error: String? = null,
-    ) {
-        val inParty: Boolean get() = code != null
+    ) : PartyView {
+        override val live: Boolean get() = connection == Connection.LIVE
         val isFull: Boolean get() = members.size >= maxMembers
-        val controlsLocked: Boolean get() = inParty && hostOnlyControl && you?.isHost != true
     }
 
     /** A refusal from the server, carrying the machine-readable half. */
@@ -181,6 +190,7 @@ internal object DesktopListenTogether {
             }
         }
         refreshServerHealth()
+        scope.launch { homeLoop() }
     }
 
     fun setCustomServerUrl(value: String): Result<Unit> = runCatching {
@@ -294,6 +304,9 @@ internal object DesktopListenTogether {
         nickname: String,
         request: suspend (Identity, String) -> PartyMembership,
     ): Result<String> = withContext(Dispatchers.IO) {
+        // Fork: a jam takes this computer out of Connect for its duration;
+        // leaving the jam brings it back (see [homeLoop]).
+        if (_state.value.isConnect) leaveParty(reason = "jam")
         val who = identity(nickname)
             ?: return@withContext Result.failure(
                 PartyException("not_signed_in", "Sign in to listen together."),
@@ -329,6 +342,8 @@ internal object DesktopListenTogether {
             clock.reset()
             _state.value = State(
                 code = membership.code,
+                kind = membership.party.kind,
+                maxUpcoming = membership.party.maxUpcoming,
                 you = membership.you,
                 members = membership.party.members,
                 maxMembers = membership.party.maxMembers,
@@ -344,7 +359,7 @@ internal object DesktopListenTogether {
         }.map { it.code }
     }
 
-    suspend fun leaveParty() = withContext(Dispatchers.IO) {
+    suspend fun leaveParty(reason: String? = null) = withContext(Dispatchers.IO) {
         val code = _state.value.code
         val held = token
         val server = activePartyServerBase ?: effectiveIdleServerBase
@@ -361,7 +376,7 @@ internal object DesktopListenTogether {
         _state.value = State()
         if (code != null && held != null && server.isNotBlank()) {
             runCatching {
-                http.post("$server/api/parties/$code/leave") {
+                http.post("$server/api/parties/$code/leave" + (reason?.let { "?reason=$it" } ?: "")) {
                     header("Authorization", "Bearer $held")
                 }
             }
@@ -414,6 +429,43 @@ internal object DesktopListenTogether {
 
     fun setHostOnlyControl(enabled: Boolean) =
         control("setHostOnlyControl") { put("enabled", enabled) }
+
+    /** Fork, Connect only: move playback to another of this account's devices. */
+    fun transfer(memberId: String) = control("transfer") { put("memberId", memberId) }
+
+    /** Fork, Connect only: move playback to a device that is asleep; the server pushes to it. */
+    fun wake(deviceId: String) = control("wake") { put("deviceId", deviceId) }
+
+    /** Fork, Connect only: ask the device playing to play at [volume], 0 to 1. */
+    fun setVolume(volume: Double) = control("setVolume") { put("volume", volume.coerceIn(0.0, 1.0)) }
+
+    /** Fork, Connect output only: what this computer's volume really is. */
+    fun reportVolume(volume: Double, steps: Int = 100) = control("volumeState") {
+        put("volume", volume.coerceIn(0.0, 1.0))
+        put("control", true)
+        put("steps", steps)
+    }
+
+    /**
+     * Fork: where this computer's player really is, for the clock to report.
+     * Stamped with the server-clock instant it was read at, and sent only once
+     * the offset is measured: without one the stamp would be a guess, and the
+     * server would move the whole party onto it.
+     */
+    fun reportMeasured(videoId: String, positionMs: Long, durationMs: Long = 0L) {
+        val state = _state.value
+        if (!state.isClock || !state.clockSynced) return
+        val atMs = clock.serverNowMs() ?: return
+        send(buildJsonObject {
+            put("type", "report")
+            put("measured", true)
+            put("videoId", videoId)
+            put("positionMs", positionMs)
+            put("atMs", atMs)
+            put("isPlaying", true)
+            if (durationMs > 0) put("durationMs", durationMs)
+        })
+    }
 
     private fun control(action: String, body: JsonObjectBuilder.() -> Unit) {
         if (_state.value.controlsLocked) return
@@ -475,7 +527,11 @@ internal object DesktopListenTogether {
                 ) {
                     session = this
                     backoffMs = 1_000L
-                    _state.update { it.copy(connection = Connection.LIVE, error = null) }
+                    // Fork: not LIVE yet. Until the welcome lands, everything held
+                    // is what was true before the gap, and the player treats LIVE
+                    // as permission to act on it. Following stale state is what
+                    // looped the last song from part way in.
+                    _state.update { it.copy(error = null) }
                     launch { pingLoop() }
                     launch { reportLoop() }
                     for (frame in incoming) {
@@ -490,6 +546,15 @@ internal object DesktopListenTogether {
                 session = null
             }
             if (!currentCoroutineContext().isActive) return
+            // Fork: a socket that cannot be opened is either the network or a
+            // membership the server no longer has (swept after its grace, or
+            // every one at once when the server restarts). Retrying the second
+            // kind is refused for ever, so ask with a plain request.
+            when (probeMembership(server = activePartyServerBase, code = code, held = held)) {
+                401 -> { onMembershipLost(partyGone = false); return }
+                404 -> { onMembershipLost(partyGone = true); return }
+                else -> Unit
+            }
             _state.update { it.copy(connection = Connection.CONNECTING) }
             clock.reset()
             _state.update { it.copy(clockSynced = false) }
@@ -522,6 +587,9 @@ internal object DesktopListenTogether {
     private suspend fun DefaultClientWebSocketSession.reportLoop() {
         while (true) {
             delay(REPORT_INTERVAL_MS)
+            // Fork: the clock sends its real playhead through [reportMeasured],
+            // and a remote has no playhead to speak of.
+            if (_state.value.isClock || _state.value.isRemote) continue
             val position = partyPositionMs() ?: continue
             val frame = buildJsonObject {
                 put("type", "report")
@@ -546,6 +614,9 @@ internal object DesktopListenTogether {
                 _state.update {
                     it.copy(
                         code = party.code,
+                        kind = party.kind,
+                        maxUpcoming = party.maxUpcoming,
+                        devices = party.devices,
                         you = you ?: it.you,
                         members = party.members,
                         maxMembers = party.maxMembers,
@@ -603,6 +674,11 @@ internal object DesktopListenTogether {
                         you = current.you
                             ?.let { mine -> members.firstOrNull { it.memberId == mine.memberId } }
                             ?: current.you,
+                        devices = frame["devices"]?.let {
+                            runCatching {
+                                json.decodeFromJsonElement(ListSerializer(ConnectDevice.serializer()), it)
+                            }.getOrNull()
+                        } ?: current.devices,
                     )
                 }
             }
@@ -630,6 +706,161 @@ internal object DesktopListenTogether {
             }
         }
     }
+
+    // ------------------------------------------------------------ Connect --
+
+    private val _connectEnabled = MutableStateFlow(DesktopPersistence().boolean(KEY_CONNECT, true))
+
+    /**
+     * Fork: whether this computer sits in its account's Connect party whenever
+     * it is not in a jam, so the account's other devices can see and drive it.
+     */
+    val connectEnabled: StateFlow<Boolean> = _connectEnabled.asStateFlow()
+
+    fun setConnectEnabled(enabled: Boolean) {
+        _connectEnabled.value = enabled
+        persistence.saveBoolean(KEY_CONNECT, enabled)
+        retryConnectNow()
+        if (!enabled && _state.value.isConnect) scope.launch { leaveParty() }
+    }
+
+    /**
+     * Fork: music is coming out of this computer right now. Kept by the party
+     * sync from the player, and sent at sign-in: a computer that lost its
+     * membership mid-song comes back as the one playing rather than silenced.
+     */
+    @Volatile
+    var localPlaybackActive: Boolean = false
+
+    @Volatile private var homeRetryAtMs = 0L
+    @Volatile private var homeFailures = 0
+
+    /** Signs in again on the next tick, past any backoff: after a gateway sign-in, say. */
+    fun retryConnectNow() {
+        homeRetryAtMs = 0L
+        homeFailures = 0
+    }
+
+    /**
+     * Fork: keeps this computer in its account's Connect party whenever it is
+     * in nothing else, Connect is on and the gateway is signed in. Backs off on
+     * failure rather than asking every few seconds of a server it can't reach.
+     */
+    private suspend fun homeLoop() {
+        while (currentCoroutineContext().isActive) {
+            delay(HOME_TICK_MS)
+            if (_state.value.inParty || !_connectEnabled.value || !DesktopGateway.signedIn) continue
+            if (System.currentTimeMillis() < homeRetryAtMs) continue
+            runCatching { connectHome() }
+                .onSuccess {
+                    homeFailures = 0
+                    homeRetryAtMs = 0L
+                }
+                .onFailure { failure ->
+                    homeFailures++
+                    val code = (failure as? PartyException)?.code
+                    val wait = when (code) {
+                        "connect_disabled", "bad_login", "http_404" -> 30 * 60_000L
+                        else -> minOf(5 * 60_000L, 15_000L shl minOf(homeFailures - 1, 5))
+                    }
+                    homeRetryAtMs = System.currentTimeMillis() + wait
+                    DesktopTrackLog.log("connect: not joined ($code), retrying in ${wait / 1000}s: ${redact(failure.message)}")
+                }
+        }
+    }
+
+    private suspend fun connectHome() {
+        val server = resolveIdleServer()
+        if (server.isBlank()) throw PartyException("no_server", "No party server set.")
+        val (user, gatewayToken, salt) = DesktopGateway.tokenLogin()
+            ?: throw PartyException("not_signed_in", "Sign in to the gateway to use Connect.")
+        val response = http.post("$server/api/connect") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                ConnectRequest(
+                    gatewayUser = user,
+                    gatewayToken = gatewayToken,
+                    gatewaySalt = salt,
+                    deviceKey = connectDeviceKey(),
+                    app = CONNECT_APP,
+                    deviceName = computerName(),
+                    displayName = nickname().ifBlank { user },
+                    playing = localPlaybackActive,
+                ),
+            )
+        }
+        if (!response.status.isSuccess()) throw response.toPartyException()
+        val membership: PartyMembership = response.body()
+        if (_state.value.inParty) {
+            // A jam got in while this was in flight: hand the slot straight back.
+            runCatching {
+                http.post("$server/api/parties/${membership.code}/leave") {
+                    header("Authorization", "Bearer ${membership.token}")
+                }
+            }
+            return
+        }
+        activePartyServerBase = server
+        token = membership.token
+        persistence.saveString(KEY_CODE, membership.code)
+        persistence.saveString(KEY_TOKEN, membership.token)
+        persistence.saveString(KEY_ACTIVE_SERVER, server)
+        clock.reset()
+        _state.value = State(
+            code = membership.code,
+            kind = membership.party.kind,
+            maxUpcoming = membership.party.maxUpcoming,
+            devices = membership.party.devices,
+            you = membership.you,
+            members = membership.party.members,
+            maxMembers = membership.party.maxMembers,
+            hostOnlyControl = membership.party.hostOnlyControl,
+            playback = membership.party.playback,
+            queue = membership.party.queue,
+            connection = Connection.CONNECTING,
+        )
+        DesktopTrackLog.log("connect: signed in as ${membership.you.role}")
+        connect()
+    }
+
+    /** The status of a plain request for the party: 200 alive, 401 token gone, 404 party gone. */
+    private suspend fun probeMembership(server: String?, code: String, held: String): Int? {
+        val base = server ?: return null
+        return runCatching {
+            http.get("$base/api/parties/$code") { header("Authorization", "Bearer $held") }.status.value
+        }.getOrNull()
+    }
+
+    /**
+     * Fork: the server let this membership go while the socket was down.
+     * Connect signs straight back in as the same computer (see [homeLoop]); a
+     * jam is left, saying so.
+     */
+    private fun onMembershipLost(partyGone: Boolean) {
+        val wasConnect = _state.value.isConnect
+        DesktopTrackLog.log("listen together: membership gone (party gone=$partyGone)")
+        session = null
+        token = null
+        activePartyServerBase = null
+        persistence.saveString(KEY_CODE, "")
+        persistence.saveString(KEY_TOKEN, "")
+        persistence.saveString(KEY_ACTIVE_SERVER, "")
+        clock.reset()
+        _state.value = if (wasConnect) State() else State(error = "That party has ended.")
+        if (wasConnect) retryConnectNow()
+    }
+
+    /**
+     * This computer as one of the account's Connect devices: the same id every
+     * run, so it shows up once rather than once per launch. Letters and digits
+     * only, which is what the server accepts.
+     */
+    private fun connectDeviceKey(): String = sha256("connect:" + deviceId()).take(32)
+
+    private fun computerName(): String =
+        System.getenv("COMPUTERNAME")?.takeIf { it.isNotBlank() }
+            ?: runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrNull()?.takeIf { it.isNotBlank() }
+            ?: "Computer"
 
     // ----------------------------------------------------------- identity --
 
@@ -859,6 +1090,10 @@ internal object DesktopListenTogether {
     private const val KEY_NICKNAME = "listen_together_nickname"
     private const val KEY_ACTIVE_SERVER = "listen_together_active_server"
     private const val KEY_KICKED = "listen_together_kicked_until"
+    private const val KEY_CONNECT = "listen_together_connect"
+    private const val HOME_TICK_MS = 3_000L
+    /** How the server tells this app apart from the phone's builds. */
+    private const val CONNECT_APP = "desktop"
     private const val SERVER_PLACEHOLDER = "<party server>"
     private const val UNREACHABLE = "Couldn't reach the party server."
     private const val PING_INTERVAL_MS = 15_000L
