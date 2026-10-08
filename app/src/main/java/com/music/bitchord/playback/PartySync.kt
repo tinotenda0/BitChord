@@ -5,6 +5,7 @@ import androidx.media3.common.Player
 import com.music.bitchord.data.DebugLog as Log
 import com.music.bitchord.data.listentogether.ListenTogether
 import com.music.bitchord.data.listentogether.PartyTrack
+import com.music.bitchord.data.listentogether.partyQueueIndexOf
 import com.music.bitchord.data.model.QueueTier
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.sources.TrackMatcher
@@ -759,7 +760,7 @@ class PartySync(
             // Falling back to the track alone is always right; falling back to
             // position zero never is.
             val partyQueue = party.queue.items
-            val index = partyQueue.indexOfFirst { it.videoId == track.videoId }
+            val index = partyQueueIndexOf(party.queue, party.playback, track.videoId)
             val queue = if (index >= 0) partyQueue else listOf(track)
             val startIndex = if (index >= 0) index else 0
             // Off the main thread: building an item resolves artwork sizes and
@@ -872,7 +873,7 @@ class PartySync(
         // Play next, Add to queue, removing a row, dragging one. Before this,
         // none of them reached the party and its copy of the queue silently went
         // stale until the next track change happened to rebuild it.
-        val partyIndex = party.queue.items.indexOfFirst { it.videoId == party.playback.track?.videoId }
+        val partyIndex = partyQueueIndexOf(party.queue, party.playback, party.playback.track?.videoId)
         val upcomingPartyTracks = if (partyIndex >= 0) {
             party.queue.items.drop(partyIndex + 1)
         } else {
@@ -1019,7 +1020,7 @@ class PartySync(
 
         val currentIndex = exo.currentMediaItemIndex
         val currentMediaId = exo.currentMediaItem?.mediaId ?: return
-        val partyIndex = partyQueue.indexOfFirst { it.videoId == currentMediaId }
+        val partyIndex = partyQueueIndexOf(party.queue, party.playback, currentMediaId)
         if (partyIndex < 0) return
 
         val desiredUpcoming = partyQueue.subList(partyIndex + 1, partyQueue.size).take(party.maxUpcoming)
@@ -1240,82 +1241,3 @@ internal fun PartyTrack.toSong(): Song = Song(
     },
 )
 
-internal data class QueueMoveDelta(
-    val fromIndex: Int,
-    val toIndex: Int,
-    val videoId: String,
-)
-
-/**
- * Detects if [newList] is the result of moving exactly one item in [oldList].
- * If so, returns the from and to indices (offset by [baseOffset]) and the item's id.
- * Returns null if the lists cannot be explained by a single move.
- */
-internal fun detectSingleMove(
-    oldList: List<String>,
-    newList: List<String>,
-    baseOffset: Int = 0,
-): QueueMoveDelta? {
-    if (oldList.size != newList.size || oldList == newList || oldList.isEmpty()) return null
-    if (oldList.groupingBy { it }.eachCount() != newList.groupingBy { it }.eachCount()) return null
-
-    for (from in oldList.indices) {
-        val item = oldList[from]
-        val withoutItem = oldList.toMutableList().apply { removeAt(from) }
-        for (to in oldList.indices) {
-            if (from == to) continue
-            val simulated = withoutItem.toMutableList().apply { add(to, item) }
-            if (simulated == newList) {
-                return QueueMoveDelta(
-                    fromIndex = baseOffset + from,
-                    toIndex = baseOffset + to,
-                    videoId = item,
-                )
-            }
-        }
-    }
-    return null
-}
-
-/**
- * Whether the player may be moved to match the party at all: only while the
- * party is being heard from. A device out of touch keeps playing what it is
- * playing; see [shouldCatchUpOnReconnect] for the way back.
- */
-internal fun mayFollow(party: ListenTogether.State): Boolean =
-    party.connection == ListenTogether.Connection.LIVE
-
-/**
- * Whether this device, just back in touch, should tell the party what it is
- * doing rather than be told. Only the device whose playback is the party's (the
- * clock, or Connect's output) and only when it actually moved on while away.
- */
-/**
- * Whether this device fills an empty party with what its own player holds.
- *
- * A jam is created on purpose, by somebody with the song they mean to share
- * loaded, so its host seeds it playing or not. Connect is joined by every
- * signed-in device on its own, and an idle one holds whatever it was left on:
- * a tablet at home that happened to sign in first after the server restarted
- * pushed its paused, hours-old queue over the phone that was out playing. So in
- * Connect only a device that is actually playing may seed.
- */
-internal fun shouldSeedEmptyParty(party: ListenTogether.State, playing: Boolean): Boolean {
-    if (party.connection != ListenTogether.Connection.LIVE) return false
-    if (party.you?.isHost != true || party.playback.track != null) return false
-    return playing || !party.isConnect
-}
-
-internal fun shouldCatchUpOnReconnect(
-    party: ListenTogether.State,
-    localTrackId: String?,
-    localPlaying: Boolean,
-): Boolean {
-    if (party.connection != ListenTogether.Connection.LIVE || localTrackId == null) return false
-    val ownsPlayback = party.isClock || (party.isConnect && !party.isRemote)
-    if (!ownsPlayback) return false
-    val playback = party.playback
-    // An empty party is seeded from this device by [PartySync] as it is.
-    if (playback.track == null) return false
-    return localTrackId != playback.track.videoId || localPlaying != playback.isPlaying
-}

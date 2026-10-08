@@ -1,6 +1,7 @@
 package com.music.bitchord.data.listentogether
 
 import android.content.Context
+import android.os.SystemClock
 import android.content.SharedPreferences
 import android.net.ConnectivityManager
 import android.net.Network
@@ -165,91 +166,34 @@ object ListenTogether {
     enum class Connection { OFFLINE, CONNECTING, LIVE }
 
     data class State(
-        val code: String? = null,
+        override val code: String? = null,
         /** [KIND_JAM] or [KIND_CONNECT]. See [isConnect]. */
-        val kind: String = KIND_JAM,
+        override val kind: String = KIND_JAM,
         /** Connect only: this account's devices, including the ones asleep. */
         val devices: List<ConnectDevice> = emptyList(),
         /** See [PartySnapshot.maxUpcoming]. */
         val maxUpcoming: Int = DEFAULT_MAX_UPCOMING,
-        val you: PartyMember? = null,
-        val members: List<PartyMember> = emptyList(),
+        override val you: PartyMember? = null,
+        override val members: List<PartyMember> = emptyList(),
         val maxMembers: Int = 5,
         /** @see controlsLocked */
-        val hostOnlyControl: Boolean = false,
-        val playback: PartyPlayback = PartyPlayback(),
+        override val hostOnlyControl: Boolean = false,
+        override val playback: PartyPlayback = PartyPlayback(),
         /**
          * Held separately from [playback] because it arrives separately: the
          * state frame carries only a sequence number for it, and this is
          * replaced when the server says the list has actually changed.
          */
-        val queue: PartyQueue = PartyQueue(),
+        override val queue: PartyQueue = PartyQueue(),
         val connection: Connection = Connection.OFFLINE,
         /** False until the first round trip; the playhead is a guess until then. */
         val clockSynced: Boolean = false,
         val roundTripMs: Long = 0,
         /** The last thing that went wrong, for the screen to show. */
         val error: String? = null,
-    ) {
-        val inParty: Boolean get() = code != null
+    ) : PartyView {
+        override val live: Boolean get() = connection == Connection.LIVE
         val isFull: Boolean get() = members.size >= maxMembers
-
-        /**
-         * Whether this device may not drive the music.
-         *
-         * True only for a listener in a party whose host has taken control of
-         * it — the host is never locked out of their own party, and a device
-         * that is not in one is not in this feature's business at all. The
-         * server enforces the same rule, so this is what the app shows rather
-         * than what makes it true; see `backend/party.MayControl`.
-         *
-         * Host is reassigned when a host leaves, so this can go false under a
-         * listener mid-party. Everything reading it has to follow.
-         */
-        val controlsLocked: Boolean
-            get() = inParty && hostOnlyControl && you?.isHost != true
-
-        /**
-         * This device drives the party without playing it, like a phone
-         * controlling somebody else's speaker. Its player is left alone and the
-         * playback service shows the party through `PartyRemotePlayer` instead.
-         */
-        val isRemote: Boolean
-            get() = inParty && you?.isRemote == true
-
-        /**
-         * This device's real playhead is the one the party follows. It reports
-         * what it is actually playing and does not chase the party itself; see
-         * [PartyPlayback.clockMemberId].
-         */
-        val isClock: Boolean
-            get() = inParty && you != null && playback.clockMemberId == you.memberId
-
-        /**
-         * In this account's Connect party: its own devices, joined without a
-         * code, with one of them playing. Most of the time a signed-in device is
-         * in one, so this is the default state, and nearly every rule written
-         * for a jam (several speakers kept in step, a queue that belongs to
-         * everybody) does not apply to it. See [inJam].
-         */
-        val isConnect: Boolean
-            get() = inParty && kind == KIND_CONNECT
-
-        /** In a jam: a party joined with a code, shared with other people. */
-        val inJam: Boolean
-            get() = inParty && kind != KIND_CONNECT
-
-        /**
-         * Whether the queue on this device's own player is this user's own
-         * music: outside a party, or as the device playing Connect. Not in a jam,
-         * where it is everybody's, nor as a remote, whose player plays nothing.
-         */
-        val ownsQueue: Boolean
-            get() = !inParty || (isConnect && !isRemote)
-
-        /** The Connect device playing right now, or null. */
-        val output: PartyMember?
-            get() = if (isConnect) members.firstOrNull { it.isHost && !it.isRemote } else null
     }
 
     /** A refusal from the server, carrying the machine-readable half. */
@@ -294,7 +238,7 @@ object ListenTogether {
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val clock = ServerClock()
+    private val clock = ServerClock(SystemClock::elapsedRealtime)
     private val switchMutex = Mutex()
 
     private val _state = MutableStateFlow(State())
@@ -608,7 +552,7 @@ object ListenTogether {
     suspend fun probeHealthWithLatency(serverUrl: String, timeoutMs: Long): ProbeResult {
         val raw = resolveHttpBase(serverUrl)
         if (raw.isBlank()) return ProbeResult(isOnline = false, latencyMs = 0L)
-        val start = ServerClock.localNowMs()
+        val start = clock.nowMs()
         val isOnline = runCatching {
             val response = http.get("$raw/healthz") {
                 timeout { requestTimeoutMillis = timeoutMs }
@@ -620,7 +564,7 @@ object ListenTogether {
             Log.w(TAG, "health check failed for ${redact(raw)}: ${redact(it.message)}")
             false
         }
-        val elapsed = ServerClock.localNowMs() - start
+        val elapsed = clock.nowMs() - start
         return ProbeResult(isOnline = isOnline, latencyMs = if (isOnline) elapsed.coerceAtLeast(0L) else 0L)
     }
 
@@ -1462,12 +1406,12 @@ object ListenTogether {
      */
     fun partyPositionMs(): Long? {
         val playback = _state.value.playback
-        playback.track ?: return null
+        val track = playback.track ?: return null
         if (!playback.isPlaying) return playback.positionMs
         val serverNow = clock.serverNowMs() ?: return playback.effectivePositionMs
         val elapsed = (serverNow - playback.anchorMs).coerceAtLeast(0)
         val position = playback.positionMs + elapsed
-        val duration = playback.track.durationMs
+        val duration = track.durationMs
         return if (duration != null) minOf(position, duration) else position
     }
 
@@ -1583,7 +1527,7 @@ object ListenTogether {
     }
 
     private suspend fun DefaultClientWebSocketSession.ping() {
-        val sentAt = ServerClock.localNowMs()
+        val sentAt = clock.nowMs()
         val frame = buildJsonObject {
             put("type", "ping")
             put("clientMs", sentAt)
@@ -1639,7 +1583,7 @@ object ListenTogether {
     }
 
     private fun onFrame(text: String) {
-        val received = ServerClock.localNowMs()
+        val received = clock.nowMs()
         val frame = runCatching { json.parseToJsonElement(text).jsonObject }.getOrNull() ?: return
         when (frame["type"]?.jsonPrimitive?.content) {
             "welcome" -> {

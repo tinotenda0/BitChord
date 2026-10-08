@@ -1,0 +1,95 @@
+# Fork: builds BitChord for Windows and publishes it as a GitHub release on this
+# fork, which is where the desktop app's update check looks (DesktopUpdateChecker).
+#
+# Tagged "desktop-<version>" rather than "v<version>", so upstream's release.yml,
+# which also lives in this repo and fires on v* tags, never runs for it. Each
+# build installs over the one before: the installer's version takes this
+# workflow's run number (see desktopVersionCode in desktopApp/build.gradle.kts).
+#
+# Unsigned, as upstream's are: Windows SmartScreen asks once on first launch.
+name: Publish desktop build
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: "Release notes"
+        required: false
+        default: "Desktop build"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-desktop
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Windows · installer, msi, portable
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: WiX Toolset 3
+        shell: pwsh
+        run: |
+          $url = "https://github.com/wixtoolset/wix3/releases/download/wix3141rtm/wix314-binaries.zip"
+          Invoke-WebRequest -Uri $url -OutFile wix.zip
+          Expand-Archive wix.zip -DestinationPath "$env:RUNNER_TEMP\wix"
+          "$env:RUNNER_TEMP\wix" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Work out the version
+        id: version
+        shell: bash
+        run: |
+          # The same stamp the phone builds get (see publish.yml): base version, day, commit.
+          base=$(sed -n 's/.*?: "\([0-9][0-9.]*\)"$/\1/p' app/build.gradle.kts | head -n 1)
+          echo "value=${base}-$(date -u +%Y%m%d)-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+
+      - name: Tests
+        run: .\gradlew.bat :shared:jvmTest :desktopApp:test "-Pbitchord.version=${{ steps.version.outputs.value }}"
+
+      - name: Build msi, exe and the app image
+        run: |
+          .\gradlew.bat :desktopApp:packageMsi :desktopApp:packageExe :desktopApp:createDistributable "-Pbitchord.version=${{ steps.version.outputs.value }}" "-Pbitchord.desktopBuild=${{ github.run_number }}"
+
+      - name: The analyser, models and media controls are in the jar
+        shell: bash
+        run: |
+          jar=$(ls desktopApp/build/compose/binaries/main/app/BitChord/app/desktopApp*.jar)
+          jar tf "$jar" | grep -q 'native/bitchord_analysis.dll'
+          jar tf "$jar" | grep -q 'models/.*\.onnx'
+          jar tf "$jar" | grep -q 'native/bitchord_smtc.dll'
+
+      - name: Collect
+        shell: pwsh
+        run: |
+          $v = "${{ steps.version.outputs.value }}"
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item desktopApp/build/compose/binaries/main/msi/*.msi "dist/BitChord-$v-windows-x64.msi"
+          Copy-Item desktopApp/build/compose/binaries/main/exe/*.exe "dist/BitChord-$v-windows-x64-setup.exe"
+          7z a -tzip -mx=5 "dist/BitChord-$v-windows-x64-portable.zip" `
+            "desktopApp/build/compose/binaries/main/app/BitChord/*" | Out-Null
+          Get-ChildItem dist | Format-Table Name, Length
+
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          v="${{ steps.version.outputs.value }}"
+          gh release create "desktop-$v" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "BitChord for Windows $v" \
+            --notes "$NOTES"
