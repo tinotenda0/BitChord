@@ -1,0 +1,95 @@
+# Fork: watches kushagrasinghx/BitChord for commits this fork hasn't merged.
+#
+# Every three days it fetches upstream, lists what is new since the last merge,
+# and does a trial merge onto main to see which files would conflict (nothing is
+# pushed; the merge is thrown away). The answer goes into a single GitHub issue
+# labelled "upstream-sync": opened when there is something new, updated on each
+# run after that, and closed once main has caught up.
+name: Watch upstream
+
+on:
+  schedule:
+    # 09:00 UTC on the 1st, 4th, 7th, ... of each month.
+    - cron: "0 9 */3 * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-watch
+  cancel-in-progress: true
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Compare with upstream
+        id: compare
+        run: |
+          git remote add upstream https://github.com/kushagrasinghx/BitChord.git
+          git fetch --quiet upstream main
+          base=$(git merge-base HEAD upstream/main)
+          count=$(git rev-list --count "$base"..upstream/main)
+          echo "count=$count" >> "$GITHUB_OUTPUT"
+          [ "$count" -eq 0 ] && exit 0
+
+          git config user.name "upstream-watch"
+          git config user.email "upstream-watch@users.noreply.github.com"
+          if git merge --no-commit --no-ff upstream/main > /dev/null 2>&1; then
+            conflicts=""
+          else
+            conflicts=$(git diff --name-only --diff-filter=U)
+          fi
+          git merge --abort > /dev/null 2>&1 || true
+
+          {
+            echo "**$count new upstream commits** since the last merge (\`$(git rev-parse --short "$base")\`, $(git log -1 --format=%ad --date=short "$base"))."
+            echo
+            if [ -z "$conflicts" ]; then
+              echo "A trial merge onto \`main\` is **clean**."
+            else
+              echo "A trial merge onto \`main\` **conflicts** in $(echo "$conflicts" | wc -l) file(s):"
+              echo
+              echo "$conflicts" | sed 's/^/- `/; s/$/`/'
+            fi
+            echo
+            echo "### Commits"
+            echo
+            git log --no-merges --format='- [`%h`](https://github.com/kushagrasinghx/BitChord/commit/%H) %ad · %s' --date=short "$base"..upstream/main | head -150
+            echo
+            echo "<sub>Checked $(date -u '+%Y-%m-%d %H:%M UTC') by the Watch upstream workflow. Upstream changes since: [compare](https://github.com/kushagrasinghx/BitChord/compare/$(git rev-parse "$base")...main)</sub>"
+          } > body.md
+
+      - name: Open, update or close the issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COUNT: ${{ steps.compare.outputs.count }}
+        run: |
+          gh label create upstream-sync --color 5319e7 --description "New commits upstream" --force > /dev/null
+          open=$(gh issue list --label upstream-sync --state open --json number --jq '.[0].number // empty')
+          if [ "$COUNT" -eq 0 ]; then
+            if [ -n "$open" ]; then
+              gh issue close "$open" --comment "Caught up with upstream: nothing left to merge."
+            fi
+            exit 0
+          fi
+          title="Upstream has $COUNT new commits"
+          if [ -n "$open" ]; then
+            before=$(gh issue view "$open" --json title --jq .title)
+            gh issue edit "$open" --title "$title" --body-file body.md
+            # A comment only when there is more than last time, so the update
+            # notifies; an edited body on its own doesn't, and the same backlog
+            # shouldn't ping every three days.
+            if [ "$before" != "$title" ]; then
+              gh issue comment "$open" --body "More upstream: now $COUNT new commits. Details above."
+            fi
+          else
+            gh issue create --title "$title" --label upstream-sync --body-file body.md
+          fi
