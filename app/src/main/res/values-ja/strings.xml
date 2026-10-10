@@ -1287,4 +1287,6 @@
     <string name="spotify_library_subtitle">あなたの Spotify プレイリスト</string>
     <string name="spotify_sign_in">Spotify でサインイン</string>
     <string name="spotify_track_unavailable">その曲は YouTube Music で見つかりません</string>
+    <string name="chinese_simplified">中国語（簡体字）</string>
+    <string name="chinese_traditional">中国語（繁体字）</string>
 </resources>

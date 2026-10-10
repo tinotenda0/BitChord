@@ -56,12 +56,20 @@ class LocaleStringsTest(private val tag: String) {
 
     @Test
     fun strings_containsAllBaseKeys() {
-        val localeFile = File(resDir, "values-$tag/strings.xml")
-        assertTrue("values-$tag/strings.xml must exist", localeFile.exists())
+        // A region tag is a folder Android spells with an r ("zh-TW" -> values-zh-rTW), and
+        // falls back to the bare language (zh-CN -> values-zh) when there is no regional one.
+        val language = tag.substringBefore('-')
+        val region = tag.substringAfter('-', "")
+        val folder = listOfNotNull(
+            region.takeIf { it.isNotEmpty() }?.let { "values-$language-r$it" },
+            "values-$language",
+        ).firstOrNull { File(resDir, "$it/strings.xml").exists() } ?: "values-$tag"
+        val localeFile = File(resDir, "$folder/strings.xml")
+        assertTrue("$folder/strings.xml must exist", localeFile.exists())
 
         val missingKeys = baseKeys - translatableKeys(parse(localeFile))
         assertTrue(
-            "values-$tag/strings.xml is missing ${missingKeys.size} keys from values/strings.xml: $missingKeys",
+            "$folder/strings.xml is missing ${missingKeys.size} keys from values/strings.xml: $missingKeys",
             missingKeys.isEmpty(),
         )
     }

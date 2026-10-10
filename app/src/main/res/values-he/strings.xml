@@ -1314,4 +1314,6 @@
     <string name="spotify_library_subtitle">הפלייליסטים שלכם ב-Spotify</string>
     <string name="spotify_sign_in">התחברות עם Spotify</string>
     <string name="spotify_track_unavailable">לא נמצא שיר כזה ב-YouTube Music</string>
+    <string name="chinese_simplified">סינית (מפושטת)</string>
+    <string name="chinese_traditional">סינית (מסורתית)</string>
 </resources>

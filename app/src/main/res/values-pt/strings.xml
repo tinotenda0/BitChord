@@ -1314,4 +1314,6 @@
     <string name="spotify_library_subtitle">Suas playlists do Spotify</string>
     <string name="spotify_sign_in">Entrar com Spotify</string>
     <string name="spotify_track_unavailable">Não foi possível encontrar essa música no YouTube Music</string>
+    <string name="chinese_simplified">Chinês (simplificado)</string>
+    <string name="chinese_traditional">Chinês (tradicional)</string>
 </resources>
