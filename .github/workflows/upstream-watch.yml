@@ -70,6 +70,8 @@ jobs:
       - name: Open, update or close the issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # This fork. With an "upstream" remote in the checkout, gh would otherwise pick that.
+          GH_REPO: ${{ github.repository }}
           COUNT: ${{ steps.compare.outputs.count }}
         run: |
           gh label create upstream-sync --color 5319e7 --description "New commits upstream" --force > /dev/null
