@@ -1267,8 +1267,6 @@
     <string name="spotify_library_subtitle">你的 Spotify 播放列表</string>
     <string name="spotify_sign_in">使用 Spotify 登入</string>
     <string name="spotify_track_unavailable">在 YouTube Music 上找不到該歌曲</string>
-    <string name="lyrics_original_title">用原標題搜歌詞</string>
-    <string name="lyrics_original_title_desc">先還原 YouTube 原標題再搜歌詞，翻譯過的標題也能找到</string>
     <string name="listen_together_join_as_remote">以遙控器身分加入</string>
     <string name="listen_together_join_as_remote_footer">在這支手機上控制主持人的音樂，但不在這裡播放。</string>
     <string name="listen_together_remote_badge">遙控器</string>
