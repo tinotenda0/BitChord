@@ -106,7 +106,16 @@ suspend fun loadAutoplayTracks(
     limit: Int = MAX_QUEUED_AUTOPLAY,
 ): Result<List<Song>> {
     // Fork: a Surprise Me queue is topped up by the gateway's DJ, not by radio.
-    if (SurpriseMe.isSurpriseMe(seedSong)) return SurpriseMe.continuation(existing, limit)
+    // When the DJ can't be reached (or has nothing new), the queue carries on
+    // with YouTube's radio for the last song instead of running dry: before, a
+    // gateway that dropped mid-session stopped the music at the end of the
+    // batch. The radio tracks keep the Surprise Me source (copied from the seed
+    // below), so the next top-up asks the DJ again and it takes back over.
+    if (SurpriseMe.isSurpriseMe(seedSong)) {
+        SurpriseMe.continuation(existing, limit).getOrNull()
+            ?.takeIf { it.isNotEmpty() }
+            ?.let { return Result.success(it) }
+    }
     val seed = youtubeSeedFor(seedSong) ?: return Result.success(emptyList())
     val related = YtMusicRepository.radio(seed).getOrElse { return Result.failure(it) }
     val extra = QueueBuilder.extend(existing, related, limit)

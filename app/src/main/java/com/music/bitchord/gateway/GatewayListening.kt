@@ -107,6 +107,17 @@ object GatewayListening {
             outboxLock.withLock { _pending.value = readOutbox() }
             drain()
         }
+        // Fork: send what queued up offline as soon as there is a connection
+        // again, not only after the next listen finishes; until then the stats
+        // on every other device lag behind this one.
+        runCatching {
+            val manager = context.getSystemService(android.net.ConnectivityManager::class.java)
+            manager?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    if (_pending.value.isNotEmpty()) drain()
+                }
+            })
+        }.onFailure { Log.w(TAG, "Could not watch the network for the listening outbox", it) }
     }
 
     private val ready: Boolean get() = this::outboxFile.isInitialized
