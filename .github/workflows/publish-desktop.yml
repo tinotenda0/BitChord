@@ -6,7 +6,8 @@
 # build installs over the one before: the installer's version takes this
 # workflow's run number (see desktopVersionCode in desktopApp/build.gradle.kts).
 #
-# Unsigned, as upstream's are: Windows SmartScreen asks once on first launch.
+# Unsigned, as upstream's are: Windows SmartScreen asks once on first launch. Each build is then
+# added to the household release page as a link (register-desktop-release.yml).
 name: Publish desktop build
 
 on:
@@ -28,6 +29,8 @@ jobs:
   windows:
     name: Windows · installer, msi, portable
     runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
     steps:
       - uses: actions/checkout@v4
 
@@ -93,3 +96,13 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "BitChord for Windows $v" \
             --notes "$NOTES"
+
+  # The household release page and the dashboard list it as well, linking to the files above.
+  register:
+    needs: windows
+    uses: ./.github/workflows/register-desktop-release.yml
+    with:
+      tag: desktop-${{ needs.windows.outputs.version }}
+      notes: ${{ inputs.notes }}
+    secrets:
+      XPS_RELEASE_TOKEN: ${{ secrets.XPS_RELEASE_TOKEN }}
