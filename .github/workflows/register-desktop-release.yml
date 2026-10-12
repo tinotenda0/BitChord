@@ -1,0 +1,61 @@
+# Fork: adds an existing BitChord for Windows GitHub release to the household release page
+# (https://api.tinotenda.co/api/v1/releases/page?app=bitchord-windows) as a link, since the
+# installers are too big to upload there. publish-desktop.yml calls this for every new build;
+# run it by hand to add one published before that.
+name: Register desktop release
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+      notes:
+        type: string
+        required: false
+        default: ""
+    secrets:
+      XPS_RELEASE_TOKEN:
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. desktop-1.8-20261010-09cdf5ef"
+        required: true
+      notes:
+        description: "Notes (defaults to the GitHub release's)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Register on the release page
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          release=$(gh release view "$TAG" --json assets,body)
+          version="${TAG#desktop-}"
+          pick() { echo "$release" | jq -r --arg s "$1" '.assets[] | select(.name | endswith($s)) | .' ; }
+          setup=$(pick "-setup.exe")
+          [ -n "$setup" ] || { echo "::error::$TAG has no installer"; exit 1; }
+          assets=$(echo "$release" | jq -c '[.assets[] | select(.name | endswith("-setup.exe") | not)
+            | {name: (if (.name | endswith(".msi")) then "MSI" elif (.name | endswith(".zip")) then "Portable zip" else .name end),
+               url, size}]')
+          [ -n "$NOTES" ] || NOTES=$(echo "$release" | jq -r .body)
+          curl --fail-with-body \
+            -F "version=$version" \
+            -F "url=$(echo "$setup" | jq -r .url)" \
+            -F "size=$(echo "$setup" | jq -r .size)" \
+            -F "notes=$NOTES" \
+            -F "assets=$assets" \
+            -F "notify=false" \
+            -H "Authorization: Bearer ${{ secrets.XPS_RELEASE_TOKEN }}" \
+            "https://api.tinotenda.co/api/v1/releases/bitchord-windows/prod/publish-link"
