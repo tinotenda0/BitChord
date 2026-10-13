@@ -139,3 +139,21 @@ fun nextVolumeStep(applied: Long, reqSeq: Long, target: Double?, allowed: Boolea
     reqSeq > applied -> VolumeStep(reqSeq, target?.takeIf { allowed }, fresh = false)
     else -> VolumeStep(applied, null, fresh = false)
 }
+
+/**
+ * What of the party's running order survives a single song being played on this
+ * device, to be put back behind it.
+ *
+ * In a jam that is what people queued by hand: picking one song should not throw
+ * away everybody else's requests. Never the album or playlist somebody was
+ * playing, and never AutoPlay's picks, which the new song's own will replace.
+ *
+ * In Connect, as the device playing, nothing: the queue on this device is the
+ * user's own, exactly as when alone, and the party only mirrors it. Keeping the
+ * party's leftovers there put the playlist played before back behind every song
+ * started from Home, and with a queue that wasn't empty AutoPlay never started.
+ */
+fun partyUpcomingToKeep(party: PartyView, upcoming: List<PartyTrack>): List<PartyTrack> {
+    if (party.ownsQueue) return emptyList()
+    return upcoming.filterNot { it.fromAutoplay || it.fromContext }.take(party.maxUpcoming)
+}

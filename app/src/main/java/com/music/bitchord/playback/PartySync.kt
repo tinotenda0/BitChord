@@ -881,10 +881,8 @@ class PartySync(
         }
 
         val partyIds = party.queue.items.map(PartyTrack::videoId)
-        if (party.playback.track?.videoId != track.videoId && clampedIds.size == 1 && upcomingPartyTracks.isNotEmpty()) {
-            val toPreserve = upcomingPartyTracks
-                .filterNot { it.fromAutoplay }
-                .take(party.maxUpcoming)
+        val toPreserve = partyUpcomingToKeep(party, upcomingPartyTracks)
+        if (party.playback.track?.videoId != track.videoId && clampedIds.size == 1 && toPreserve.isNotEmpty()) {
             if (exo.mediaItemCount == 1 && toPreserve.isNotEmpty()) {
                 exo.addMediaItems(toPreserve.map { it.toSong().toMediaItem() })
             }

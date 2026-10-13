@@ -91,4 +91,24 @@ class PartyReconnectTest {
         assertFalse(shouldSeedEmptyParty(state(track = null, connection = Connection.CONNECTING), playing = true))
         assertFalse(shouldSeedEmptyParty(state(track = null, you = me.copy(isHost = false)), playing = true))
     }
+
+    private val leftovers = listOf(
+        PartyTrack(videoId = "playlist-next", fromContext = true),
+        PartyTrack(videoId = "asked-for"),
+        PartyTrack(videoId = "autoplay-pick", fromAutoplay = true),
+    )
+
+    @Test
+    fun `playing one song in Connect keeps nothing of the old queue`() {
+        // The phone playing Connect owns its queue: the playlist played before must not come
+        // back behind a song started from Home, and AutoPlay must get an empty queue to fill.
+        val connect = state(kind = KIND_CONNECT, clock = null)
+        assertTrue(partyUpcomingToKeep(connect, leftovers).isEmpty())
+    }
+
+    @Test
+    fun `playing one song in a jam keeps only what people queued by hand`() {
+        val kept = partyUpcomingToKeep(state(), leftovers).map { it.videoId }
+        assertTrue(kept == listOf("asked-for"))
+    }
 }

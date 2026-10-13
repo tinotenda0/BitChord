@@ -19,6 +19,9 @@ interface PartyView {
     val playback: PartyPlayback
     val queue: PartyQueue
 
+    /** How many tracks may follow the current one: 25 in a jam, more in Connect. */
+    val maxUpcoming: Int
+
     /**
      * Hearing from the party right now: welcomed on a live socket. Before that,
      * everything held is what was true before the gap, and nothing may be done
