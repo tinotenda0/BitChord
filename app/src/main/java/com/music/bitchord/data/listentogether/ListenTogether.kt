@@ -172,7 +172,7 @@ object ListenTogether {
         /** Connect only: this account's devices, including the ones asleep. */
         val devices: List<ConnectDevice> = emptyList(),
         /** See [PartySnapshot.maxUpcoming]. */
-        val maxUpcoming: Int = DEFAULT_MAX_UPCOMING,
+        override val maxUpcoming: Int = DEFAULT_MAX_UPCOMING,
         override val you: PartyMember? = null,
         override val members: List<PartyMember> = emptyList(),
         val maxMembers: Int = 5,
