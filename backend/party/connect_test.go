@@ -24,6 +24,17 @@ func join(t *testing.T, p *Party, key, app string) *Member {
 	return m
 }
 
+// play joins a device that has music coming out of it.
+func play(t *testing.T, p *Party, key, app string) *Member {
+	t.Helper()
+	m, err := p.JoinConnect("gw:tino", key, app, "Pixel", "Tino", nil, true)
+	if err != nil {
+		t.Fatalf("join %s:%s: %v", key, app, err)
+	}
+	m.Connected = true
+	return m
+}
+
 func TestOneAccountOneParty(t *testing.T) {
 	s := NewPartyStore()
 	if s.Account("tino") != s.Account("tino") {
@@ -69,11 +80,11 @@ func TestDevAndProdOnOnePhoneAreTwoBuildsOfOneDevice(t *testing.T) {
 	}
 }
 
-func TestFirstDevicePlaysAndOthersRemoteWhilePlaying(t *testing.T) {
+func TestTheDevicePlayingIsTheOutputAndOthersAreRemotes(t *testing.T) {
 	p := connectParty(t)
-	phone := join(t, p, "phone0001", "prod")
+	phone := play(t, p, "phone0001", "prod")
 	if !phone.IsHost || phone.IsRemote() {
-		t.Fatalf("the first device must be the output")
+		t.Fatalf("the device playing must be the output")
 	}
 	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
 
@@ -86,42 +97,52 @@ func TestFirstDevicePlaysAndOthersRemoteWhilePlaying(t *testing.T) {
 	}
 }
 
-func TestAnIdleOutputIsTakenOver(t *testing.T) {
+func TestAnIdleDeviceIsNeverHandedTheMusic(t *testing.T) {
+	// A tablet left open at home signs in first after a server restart.
 	p := connectParty(t)
-	phone := join(t, p, "phone0001", "prod")
-	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, false, nil, nil)
-
-	// Paused a moment ago: somebody may be about to press play there again.
-	laptop := join(t, p, "laptop001", "prod")
-	if !laptop.IsRemote() {
-		t.Fatalf("a freshly paused output must not be taken over")
+	tablet := join(t, p, "tablet001", "prod")
+	if tablet.IsHost || !tablet.IsRemote() || p.OutputDevice != "" {
+		t.Fatalf("a device that is not playing must not become the output")
 	}
-
-	// Paused for longer than the handover window: nobody is using it.
-	p.Playback.UpdatedAtMs = clock.NowMs() - config.ConnectHandoverMs - 1
-	laptop = join(t, p, "laptop001", "prod")
-	if laptop.IsRemote() || !laptop.IsHost || !phone.IsRemote() {
-		t.Fatalf("a device opening on an idle output must take it over")
+	phone := play(t, p, "phone0001", "prod")
+	if !phone.IsHost || !tablet.IsRemote() {
+		t.Fatalf("the phone with music coming out of it must be the output")
 	}
 }
 
-func TestADisconnectedOutputIsTakenOver(t *testing.T) {
+func TestAPausedOutputIsKept(t *testing.T) {
 	p := connectParty(t)
-	phone := join(t, p, "phone0001", "prod")
+	phone := play(t, p, "phone0001", "prod")
+	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, false, nil, nil)
+	// Paused for a long time: still nobody else's to take.
+	p.Playback.UpdatedAtMs = clock.NowMs() - 60*60*1000
+	laptop := join(t, p, "laptop001", "prod")
+	if !laptop.IsRemote() || laptop.IsHost || !phone.IsHost {
+		t.Fatalf("a paused output must not be taken over")
+	}
+}
+
+func TestAnOutputThatDroppedOffKeepsItsPlace(t *testing.T) {
+	p := connectParty(t)
+	phone := play(t, p, "phone0001", "prod")
 	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
 	phone.Connected = false
-	laptop := join(t, p, "laptop001", "prod")
-	if laptop.IsRemote() {
-		t.Fatalf("a device must not be made a remote for an output that is gone")
+
+	// The tablet at home reconnects while the phone is in a tunnel.
+	tablet := join(t, p, "tablet001", "prod")
+	if !tablet.IsRemote() || tablet.IsHost {
+		t.Fatalf("a device must not be handed the music because the output dropped off")
 	}
-	if p.Playback.IsPlaying {
-		t.Errorf("taking over from a vanished output must start paused, not far into the song")
+	// The phone is back, whatever it says about playing: it is still the output.
+	back := join(t, p, "phone0001", "prod")
+	if back != phone || !phone.IsHost || phone.IsRemote() || !tablet.IsRemote() {
+		t.Fatalf("the output must come back as the output")
 	}
 }
 
 func TestTheLastDeviceLeavingStopsTheParty(t *testing.T) {
 	p := connectParty(t)
-	phone := join(t, p, "phone0001", "prod")
+	phone := play(t, p, "phone0001", "prod")
 	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
 	p.Remove(phone.MemberId)
 	if p.Playback.IsPlaying {
@@ -129,13 +150,13 @@ func TestTheLastDeviceLeavingStopsTheParty(t *testing.T) {
 	}
 	back := join(t, p, "phone0001", "prod")
 	if !back.IsHost || p.Playback.Track == nil || p.Playback.Track.VideoId != "song" {
-		t.Errorf("the next device must pick the session up where it stopped")
+		t.Errorf("the output coming back must pick the session up where it stopped")
 	}
 }
 
 func TestTransferMovesTheOutputAndLeavesRoomToLoad(t *testing.T) {
 	p := connectParty(t)
-	phone := join(t, p, "phone0001", "prod")
+	phone := play(t, p, "phone0001", "prod")
 	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
 	p.Playback.PositionMs = 30_000
 	p.Playback.AnchorMs = clock.NowMs() - 10_000
@@ -181,18 +202,33 @@ func TestTransferIsOnlyForConnect(t *testing.T) {
 	}
 }
 
-func TestLosingTheOutputParksPlaybackOnADeviceStillThere(t *testing.T) {
+func TestLosingTheOutputMovesNothing(t *testing.T) {
 	p := connectParty(t)
-	phone := join(t, p, "phone0001", "prod")
+	phone := play(t, p, "phone0001", "prod")
 	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
 	laptop := join(t, p, "laptop001", "prod")
 
 	p.Remove(phone.MemberId)
-	if !laptop.IsHost || laptop.IsRemote() {
-		t.Fatalf("playback must move to the device still connected")
+	if laptop.IsHost || !laptop.IsRemote() {
+		t.Fatalf("playback must not move to another device on its own")
 	}
 	if p.Playback.IsPlaying {
-		t.Errorf("it must arrive paused, not start blaring from a phone in a pocket")
+		t.Errorf("the party stops where the output did")
+	}
+	if p.OutputDevice != "phone0001:prod" {
+		t.Errorf("the output's place is kept for when it is back")
+	}
+}
+
+func TestPressingPlayOnARemoteClaimsTheMusic(t *testing.T) {
+	p := connectParty(t)
+	phone := play(t, p, "phone0001", "prod")
+	laptop := join(t, p, "laptop001", "prod")
+	if err := p.Transfer(laptop.MemberId); err != nil {
+		t.Fatalf("a device must be able to claim playback for itself: %v", err)
+	}
+	if !laptop.IsHost || !phone.IsRemote() || p.OutputDevice != "laptop001:prod" {
+		t.Fatalf("the claiming device must become the output")
 	}
 }
 
@@ -232,7 +268,7 @@ func TestConnectLimitsDevicesNotRoles(t *testing.T) {
 
 func TestAWokenDeviceTakesOverEvenWhileAnotherPlays(t *testing.T) {
 	p := connectParty(t)
-	phone := join(t, p, "phone0001", "prod")
+	phone := play(t, p, "phone0001", "prod")
 	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
 	if err := p.ExpectOutput("laptop001:prod"); err != nil {
 		t.Fatalf("expect refused: %v", err)
@@ -289,7 +325,7 @@ func TestAPlayingDeviceComingBackReclaimsAnIdleParty(t *testing.T) {
 
 func TestAPlayingDeviceDoesNotStealAPartyThatIsPlaying(t *testing.T) {
 	p := connectParty(t)
-	phone := join(t, p, "phone0001", "prod")
+	phone := play(t, p, "phone0001", "prod")
 	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
 	tablet, _ := p.JoinConnect("gw:tino", "tablet001", "prod", "Tablet", "Tino", nil, true)
 	if !tablet.IsRemote() {
@@ -320,7 +356,7 @@ func TestConnectHoldsAWholePlaylist(t *testing.T) {
 
 func TestTheClockFillsInAMissingDuration(t *testing.T) {
 	p := connectParty(t)
-	phone := join(t, p, "phone0001", "prod")
+	phone := play(t, p, "phone0001", "prod")
 	laptop := join(t, p, "laptop001", "prod")
 	p.Playback.SetTrack(&laptop.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
 	seq := p.Playback.Seq
@@ -344,7 +380,7 @@ func TestTrackFromWireKeepsItsSection(t *testing.T) {
 
 func TestVolumeIsTheOutputsToShare(t *testing.T) {
 	p := connectParty(t)
-	phone := join(t, p, "phone0001", "prod")
+	phone := play(t, p, "phone0001", "prod")
 	laptop := join(t, p, "laptop001", "prod")
 	p.Playback.SetTrack(&phone.MemberId, &Track{VideoId: "song"}, 0, true, nil, nil)
 

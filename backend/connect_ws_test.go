@@ -70,8 +70,10 @@ func TestConnectAccountDevicesFindEachOther(t *testing.T) {
 	defer ts.Close()
 	fakeGateway(t)
 
-	// Capitalised by a phone keyboard: still the same account.
-	status, phone := postJSON(t, ts.URL+"/api/connect", connectBody("Tino", "secret", "phone0001", "prod"))
+	// Capitalised by a phone keyboard: still the same account. Playing, so the output.
+	first := connectBody("Tino", "secret", "phone0001", "prod")
+	first["playing"] = true
+	status, phone := postJSON(t, ts.URL+"/api/connect", first)
 	if status != http.StatusOK {
 		t.Fatalf("connect failed: %d %v", status, phone)
 	}

@@ -99,9 +99,6 @@ var (
 	ConnectMaxDevices    = getInt("JAM_CONNECT_MAX_DEVICES", 10)
 	// How long an account's party outlives its last connected device.
 	ConnectIdleTTLMs     = int64(getInt("JAM_CONNECT_IDLE_TTL_MS", 6*60*60*1000))
-	// How long the output may sit paused before a device that opens takes
-	// playback over, instead of joining as a remote for a speaker nobody is using.
-	ConnectHandoverMs    = int64(getInt("JAM_CONNECT_HANDOVER_MS", 5*60*1000))
 	// How far ahead a transferred song restarts, for the new device to load it.
 	TransferLeadMs       = int64(getInt("JAM_TRANSFER_LEAD_MS", 1500))
 	// Connect holds a whole playlist, not a jam's handful of picks: it is one

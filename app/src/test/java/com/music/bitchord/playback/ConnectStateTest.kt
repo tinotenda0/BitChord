@@ -61,10 +61,12 @@ class ConnectStateTest {
     }
 
     @Test
-    fun `only the output tops up the queue in connect`() {
+    fun `the device playing tops up the queue in connect`() {
         assertEquals("phone", autoplaySupplierId(state(laptop)))
+        // With the output away the laptop is its own player, and fills its own queue:
+        // waiting on a device that is not there is what left a song ending in silence.
         val gone = state(laptop).copy(members = listOf(phone.copy(connected = false), laptop))
-        assertNull(autoplaySupplierId(gone))
+        assertEquals("laptop", autoplaySupplierId(gone))
     }
 
     @Test
@@ -85,5 +87,26 @@ class ConnectStateTest {
         val (prod, dev) = snapshot.members
         assertEquals(prod.deviceKey, dev.deviceKey)
         assertEquals("dev", dev.app)
+    }
+
+    @Test
+    fun `a remote is only a remote while the device playing is there`() {
+        assertTrue(state(laptop).isRemote)
+        val away = state(laptop).copy(members = listOf(phone.copy(connected = false), laptop))
+        assertFalse(away.isRemote)
+        val none = state(laptop).copy(members = listOf(laptop))
+        assertFalse(none.isRemote)
+    }
+
+    @Test
+    fun `the output acts on another device's command once, and never on its own`() {
+        val fromLaptop = state(phone).copy(playback = PartyPlayback(updatedBy = "laptop", updatedAtMs = 100))
+        assertTrue(outputShouldApply(fromLaptop, seen = null))
+        assertFalse(outputShouldApply(fromLaptop, seen = fromLaptop.lastControl()))
+        val own = state(phone).copy(playback = PartyPlayback(updatedBy = "phone", updatedAtMs = 200))
+        assertFalse(outputShouldApply(own, seen = null))
+        // A later command from the laptop is new again.
+        val again = fromLaptop.copy(playback = PartyPlayback(updatedBy = "laptop", updatedAtMs = 300))
+        assertTrue(outputShouldApply(again, seen = fromLaptop.lastControl()))
     }
 }

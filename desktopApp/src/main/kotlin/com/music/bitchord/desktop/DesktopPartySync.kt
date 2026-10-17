@@ -5,7 +5,10 @@ import com.music.bitchord.data.listentogether.partyQueueIndexOf
 import com.music.bitchord.data.listentogether.partyUpcomingAfter
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.QueueTier
+import com.music.bitchord.playback.PartyControl
+import com.music.bitchord.playback.lastControl
 import com.music.bitchord.playback.mayFollow
+import com.music.bitchord.playback.outputShouldApply
 import com.music.bitchord.playback.nextVolumeStep
 import com.music.bitchord.playback.shouldCatchUpOnReconnect
 import com.music.bitchord.playback.shouldSeedEmptyParty
@@ -96,6 +99,12 @@ internal class DesktopPartySync(
     /** Fork: the last Connect volume request acted on; below zero until this device is the output. */
     private var appliedVolumeRequest = -1L
     private var lastReportedVolume: Float? = null
+
+    // Fork: Connect, as the computer playing. See [reconcileAsOutput].
+    private var wasOutput = false
+    private var seenControl: PartyControl? = null
+    private var seenQueueSeq = -1L
+    private var startPending = false
 
     /**
      * Until when inbound reconciliation is held off.
@@ -239,6 +248,12 @@ internal class DesktopPartySync(
         // turns the sound on, already in step.
         engine.setMuted(party.isRemote)
         if (!party.controlsLocked) locallyPaused = false
+        // Fork: Connect is not a party this computer follows unless it is a remote.
+        if (party.isConnect && !party.isRemote) {
+            reconcileAsOutput(party)
+            return
+        }
+        wasOutput = false
         if (nowMs() < quietUntilMs) return
         // Fork: not hearing from the party, what is held is the last thing
         // heard and it goes stale by the second. Following it anyway is what
@@ -400,10 +415,150 @@ internal class DesktopPartySync(
         }
     }
 
+    /**
+     * Connect, for a computer that is not a remote: the one playing, or one playing on its own
+     * while the device playing is away. The same rules as the phone's PartySync: the device
+     * playing is in charge, tells the party what it does and never follows the party's copy back;
+     * it acts only on being handed playback and on another device's commands, each once
+     * ([outputShouldApply]); after a gap it says where it is rather than asking.
+     */
+    private fun reconcileAsOutput(party: DesktopListenTogether.State) {
+        val me = party.you?.memberId
+        if (me == null || party.output?.memberId != me) {
+            wasOutput = false
+            return
+        }
+        if (!mayFollow(party)) {
+            outOfTouch = true
+            return
+        }
+        followVolume(party)
+        val target = party.playback
+        val playback = engine.state.value
+
+        if (!wasOutput) {
+            wasOutput = true
+            seenControl = party.lastControl()
+            seenQueueSeq = party.queue.seq
+            outOfTouch = false
+            val track = target.track
+            when {
+                track == null -> if (playback.song != null) onLocalIntent()
+                playback.song?.videoId != track.videoId -> {
+                    startPending = true
+                    loadPartyTrack(party)
+                }
+                target.isPlaying != playback.isPlaying -> startPending = true
+            }
+            if (startPending) settleHandover(party)
+            return
+        }
+        if (startPending) {
+            settleHandover(party)
+            return
+        }
+        if (outOfTouch) {
+            outOfTouch = false
+            seenControl = party.lastControl()
+            seenQueueSeq = party.queue.seq
+            DesktopTrackLog.log("party: back in touch as the output; telling it where this computer is")
+            onLocalIntent()
+            return
+        }
+
+        val track = target.track
+        if (party.isClock && track != null && playback.isPlaying && playback.song?.videoId == track.videoId) {
+            val now = nowMs()
+            if (now - lastClockReportMs >= CLOCK_REPORT_MS) {
+                lastClockReportMs = now
+                DesktopListenTogether.reportMeasured(track.videoId, playback.positionMs, playback.durationMs)
+            }
+        }
+
+        if (outputShouldApply(party, seenControl)) {
+            seenControl = party.lastControl()
+            if (target.autoplayEnabled != appliedAutoplay) {
+                appliedAutoplay = target.autoplayEnabled
+                applyPartyAutoplay(target.autoplayEnabled)
+            }
+            applyRemoteCommand(party)
+        } else {
+            seenControl = party.lastControl()
+        }
+        if (party.queue.seq > seenQueueSeq) {
+            seenQueueSeq = party.queue.seq
+            if (target.updatedBy != null && target.updatedBy != me) reconcileQueue(party)
+        }
+    }
+
+    /** Puts the party's song on this computer, from its running order when the song is in it. */
+    private fun loadPartyTrack(party: DesktopListenTogether.State) {
+        val track = party.playback.track ?: return
+        loadingVideoId = track.videoId
+        val at = partyQueueIndexOf(party.queue, party.playback, track.videoId)
+        if (at >= 0) playTrack(party.queue.items, at) else playTrack(listOf(track), 0)
+    }
+
+    /** Lines a song the party put on this computer up with where the party is, once it has loaded. */
+    private fun settleHandover(party: DesktopListenTogether.State) {
+        val target = party.playback
+        val track = target.track
+        val playback = engine.state.value
+        if (track == null) {
+            startPending = false
+            return
+        }
+        if (playback.song?.videoId != track.videoId || playback.isLoading) return
+        if (target.isPlaying && !party.clockSynced) return
+        val wait = if (target.isPlaying) DesktopListenTogether.msUntilStart() else 0L
+        if (wait > 0) {
+            startJob?.cancel()
+            startJob = scope.launch {
+                delay(wait)
+                reconcile()
+            }
+            return
+        }
+        val want = if (target.isPlaying) DesktopListenTogether.partyPositionMs() else target.positionMs
+        if (want != null && abs(playback.positionMs - want) > REMOTE_SEEK_MS) engine.seekTo(want)
+        if (target.isPlaying && !playback.isPlaying) engine.play()
+        if (!target.isPlaying && playback.isPlaying) engine.pause()
+        loadingVideoId = null
+        startPending = false
+    }
+
+    /** What another device asked this computer, the output, to do: change song, pause, resume, seek. */
+    private fun applyRemoteCommand(party: DesktopListenTogether.State) {
+        val target = party.playback
+        val track = target.track ?: return
+        val playback = engine.state.value
+        DesktopTrackLog.log("party: applying a command from another device (seq ${target.seq})")
+        if (playback.song?.videoId != track.videoId) {
+            startPending = true
+            loadPartyTrack(party)
+            return
+        }
+        if (!target.isPlaying) {
+            if (playback.isPlaying) engine.pause()
+            if (abs(playback.positionMs - target.positionMs) > REMOTE_SEEK_MS) engine.seekTo(target.positionMs)
+            return
+        }
+        val want = DesktopListenTogether.partyPositionMs()
+        if (want != null && abs(playback.positionMs - want) > REMOTE_SEEK_MS) engine.seekTo(want)
+        if (!playback.isPlaying) engine.play()
+    }
+
     /** Tells the party what this device just did. */
     private fun publish() {
         val party = DesktopListenTogether.state.value
         if (!party.inParty) return
+        // Fork, Connect: pressing play here while this computer is not the one playing (that
+        // device is away, or there is none) makes it the one, ahead of the state it is about.
+        val me = party.you?.memberId
+        if (party.isConnect && me != null && party.output?.memberId != me) {
+            DesktopListenTogether.transfer(me)
+            seenControl = null
+        }
         val playback = engine.state.value
         // Unlike ExoPlayer, the desktop state cannot represent "play when ready" while a stream
         // is still resolving: it temporarily reads as paused. Wait for the decoder so creating a
@@ -541,6 +696,8 @@ internal class DesktopPartySync(
         const val MAX_PARTY_UPCOMING_QUEUE = 25
         /** Fork: how often the clock tells the party where it really is. */
         const val CLOCK_REPORT_MS = 2_000L
+        /** How far off another device's command has to put the output before it seeks. */
+        const val REMOTE_SEEK_MS = 2_500L
 
         /** The same queue projection Android publishes to a party. */
         internal fun queueForPartyPublish(

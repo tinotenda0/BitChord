@@ -4,6 +4,7 @@ import android.os.SystemClock
 import androidx.media3.common.Player
 import com.music.bitchord.data.DebugLog as Log
 import com.music.bitchord.data.listentogether.ListenTogether
+import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.data.listentogether.PartyTrack
 import com.music.bitchord.data.listentogether.partyQueueIndexOf
 import com.music.bitchord.data.model.QueueTier
@@ -193,6 +194,13 @@ class PartySync(
 
     /** Whether this device was a remote at the last [reconcile]. */
     private var wasRemote = false
+
+    // Connect, as the device playing. See [reconcileAsOutput].
+    private var wasOutput = false
+    private var seenControl: PartyControl? = null
+    private var seenQueueSeq = -1L
+    /** A song put on this output by the party (a handover, a remote's pick) still to be started. */
+    private var startPending = false
 
     /** The party last heard from, and whether it has gone quiet since. See [reconcile]. */
     private var heardFrom: String? = null
@@ -534,6 +542,12 @@ class PartySync(
             locallyPaused = false
             rejoining = false
         }
+        // Connect is not a party this device follows: see [reconcileAsOutput].
+        if (party.isConnect) {
+            reconcileAsOutput(party)
+            return
+        }
+        wasOutput = false
         if (SystemClock.elapsedRealtime() < reconcileQuietUntilMs) return
         // Another app has the audio. Following the party from here means seeking
         // this player into place and pressing play, which takes the audio back
@@ -738,6 +752,163 @@ class PartySync(
     }
 
     /**
+     * Connect, for a device that is not a remote: the one playing, or one that is
+     * simply its own player while the device playing is away.
+     *
+     * The device playing is in charge. It tells the party what it does (see
+     * [publish]) and never follows the party's copy back: that copy is only as
+     * fresh as the last moment the two could talk, and following it on a phone
+     * on mobile data is what looped songs from part way in, undid pauses and
+     * brought old queues back after every dropped connection. It acts on exactly
+     * two things from the party:
+     *  - being handed playback (a transfer, or a woken device), when it takes the
+     *    party's song from where it is, once;
+     *  - a command from another of the account's devices, each one once (see
+     *    [outputShouldApply]).
+     * After a gap it says where it is rather than asking.
+     *
+     * A device that is not the output has no business with the party's playback
+     * at all; pressing play on it makes it the output (see [publish]).
+     */
+    private fun reconcileAsOutput(party: ListenTogether.State) {
+        val me = party.you?.memberId
+        val isOutput = me != null && party.output?.memberId == me
+        if (!isOutput) {
+            wasOutput = false
+            return
+        }
+        if (focusLost) return
+        if (!mayFollow(party)) {
+            if (heardFrom == party.code) outOfTouch = true
+            return
+        }
+        heardFrom = party.code
+        val exo = player() ?: return
+        val target = party.playback
+
+        if (!wasOutput) {
+            wasOutput = true
+            seenControl = party.lastControl()
+            seenQueueSeq = party.queue.seq
+            outOfTouch = false
+            val track = target.track
+            when {
+                // An empty party (a fresh one, or one the server lost on a
+                // restart): this device is what is playing, so it says so.
+                track == null -> if (exo.currentMediaItem != null) onLocalIntent()
+                // Handed playback: take the party's song from where it is.
+                exo.currentMediaItem?.mediaId != track.videoId -> {
+                    startPending = target.isPlaying
+                    load(party)
+                }
+                target.isPlaying && !exo.playWhenReady -> startPending = true
+            }
+            if (startPending) startWhenLoaded(party, exo)
+            return
+        }
+        if (startPending) {
+            startWhenLoaded(party, exo)
+            return
+        }
+
+        // Back in touch after a gap: this device kept playing, so it tells the
+        // party where it is, and anything the party said meanwhile is old news.
+        if (outOfTouch) {
+            outOfTouch = false
+            seenControl = party.lastControl()
+            seenQueueSeq = party.queue.seq
+            Log.i(TAG, "back in touch as the output; telling the party where this device is")
+            onLocalIntent()
+            return
+        }
+
+        reportClock(party, exo)
+
+        if (outputShouldApply(party, seenControl)) {
+            seenControl = party.lastControl()
+            // A remote switching AutoPlay changes this device's own setting.
+            if (party.playback.autoplayEnabled != AppSettings.autoplay.value) {
+                AppSettings.setAutoplay(party.playback.autoplayEnabled)
+            }
+            applyRemoteCommand(party, exo)
+        } else {
+            seenControl = party.lastControl()
+        }
+        // The queue arrives separately from the state; a remote's edit to it is
+        // applied when it lands, as long as the last word was another device's.
+        if (party.queue.seq > seenQueueSeq) {
+            seenQueueSeq = party.queue.seq
+            if (party.playback.updatedBy != null && party.playback.updatedBy != party.you?.memberId) {
+                reconcileQueue(party, exo)
+            }
+        }
+    }
+
+    /** What another device asked this one, the output, to do: change song, pause, resume, seek. */
+    private fun applyRemoteCommand(party: ListenTogether.State, exo: Player) {
+        val target = party.playback
+        val track = target.track ?: return
+        Log.i(TAG, "applying a command from another device (seq ${target.seq})")
+        if (exo.currentMediaItem?.mediaId != track.videoId) {
+            loadingVideoId = null
+            startPending = target.isPlaying
+            load(party)
+            return
+        }
+        if (!target.isPlaying) {
+            if (exo.playWhenReady) exo.pause()
+            if (abs(exo.currentPosition - target.positionMs) > REMOTE_SEEK_MS) exo.seekTo(target.positionMs)
+            return
+        }
+        val want = ListenTogether.partyPositionMs()
+        if (want != null && abs(exo.currentPosition - want) > REMOTE_SEEK_MS) exo.seekTo(want)
+        if (!exo.playWhenReady) exo.play()
+    }
+
+    /**
+     * Starts a song the party put on this output, once it is loaded and at the
+     * moment the party scheduled (a handover restarts a moment ahead so the
+     * device taking over has time to fetch the song).
+     */
+    private fun startWhenLoaded(party: ListenTogether.State, exo: Player) {
+        val target = party.playback
+        val track = target.track
+        if (track == null || !target.isPlaying) {
+            startPending = false
+            return
+        }
+        if (exo.currentMediaItem?.mediaId != track.videoId) return
+        // [load] starts it itself when it can; then there is nothing left to do.
+        if (exo.playWhenReady) {
+            startPending = false
+            return
+        }
+        if (!party.clockSynced) return
+        val wait = ListenTogether.msUntilStart()
+        if (wait > 0) {
+            startJob?.cancel()
+            startJob = scope.launch {
+                delay(wait)
+                reconcile()
+            }
+            return
+        }
+        ListenTogether.partyPositionMs()?.let(exo::seekTo)
+        exo.play()
+        startPending = false
+    }
+
+    /** The output's real playhead, for the party to keep its remotes on. */
+    private fun reportClock(party: ListenTogether.State, exo: Player) {
+        val track = party.playback.track ?: return
+        if (!party.isClock || !exo.isPlaying || exo.currentMediaItem?.mediaId != track.videoId) return
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastClockReportMs < CLOCK_REPORT_MS) return
+        lastClockReportMs = now
+        ListenTogether.reportMeasured(track.videoId, exo.currentPosition, exo.duration)
+    }
+
+    /**
      * Puts the party's running order on this player and starts at its position.
      *
      * The queue comes across as well as the track so that next and previous
@@ -820,6 +991,15 @@ class PartySync(
         }
         val exo = player() ?: return
         val song = exo.currentMediaItem?.toSong() ?: return
+        // Connect: pressing play here, while this device is not the one playing
+        // (that device is away, or there is none), makes it the one. Sent ahead
+        // of the state it is about, on the one ordered socket, so the party takes
+        // this device's song as the output's.
+        val me = party.you?.memberId
+        if (party.isConnect && me != null && party.output?.memberId != me) {
+            ListenTogether.transfer(me)
+            seenControl = null
+        }
         // A file on this device is not something a party can play: it is
         // identified by a content:// or file:// URI that means nothing anywhere
         // else, and handing one out would have every other member fail to
@@ -1135,6 +1315,13 @@ class PartySync(
          * on the clock goes unnoticed by everybody following it.
          */
         const val CLOCK_REPORT_MS = 2_000L
+
+        /**
+         * How far the output has to be from where another device's command puts
+         * it before it seeks. A resume lands the party a fraction of a second
+         * ahead of this device; seeking for that would be an audible skip.
+         */
+        const val REMOTE_SEEK_MS = 2_500L
 
         /** While paused there is nothing to hear, so the playhead can be exact. */
         const val PAUSED_TOLERANCE_MS = 400L

@@ -1204,7 +1204,7 @@ fun BitChordDesktopApp() {
      * party or while its queue does not hold that track yet.
      */
     fun partyAutoplayWaiting(party: DesktopListenTogether.State, videoId: String): Int? {
-        if (!party.inParty) return null
+        if (!party.inJam) return null
         if (partyQueueIndexOf(party.queue, party.playback, videoId) < 0) return null
         return partyUpcomingAfter(party.queue, party.playback, videoId).count { it.fromAutoplay }
     }
@@ -1267,7 +1267,7 @@ fun BitChordDesktopApp() {
                 // What the queue holds — the party's too — plus everything this session has
                 // already offered.
                 val partyQueue = DesktopListenTogether.state.value
-                    .takeIf { it.inParty }?.queue?.items.orEmpty().map { it.toDesktopSong() }
+                    .takeIf { it.inJam }?.queue?.items.orEmpty().map { it.toDesktopSong() }
                 val suggestions = DesktopAutoplay.tracksFor(
                     existing = if (dontRepeatSuggestions) {
                         liveQueue.songs + partyQueue + sessionSongHistory
@@ -1303,7 +1303,7 @@ fun BitChordDesktopApp() {
                     DesktopQueueSource(it, current.playbackSourceType ?: PlaybackSourceType.QUEUE, current.playbackSourceId)
                 }
                 val queuedSuggestions = suggestions.map { it.withSource(inherited) }
-                if (latestParty.inParty) {
+                if (latestParty.inJam) {
                     // Match the phone: the server owns the party queue. Do not mutate this one
                     // device first; queueAdd is echoed back and all members apply it atomically.
                     val landed = topUpPartyAutoplay(current.videoId, queuedSuggestions)
@@ -1319,6 +1319,8 @@ fun BitChordDesktopApp() {
                     // The mix continues from where it was added rather than starting a queue of
                     // its own.
                     if (playFirst) playQueueIndex(at)
+                    // Fork: Connect mirrors this computer's own queue.
+                    if (latestParty.isConnect) partySyncHolder[0]?.onLocalIntent()
                 }
                 if (dontRepeatSuggestions) sessionSongHistory += suggestions
                 DesktopTrackLog.log(
@@ -1345,7 +1347,11 @@ fun BitChordDesktopApp() {
         autoplayJob?.cancel()
         autoplayJob = null
         autoplaySeed = null
-        if (DesktopListenTogether.state.value.inParty) {
+        val partyNow = DesktopListenTogether.state.value
+        // Fork: in Connect, as the device playing, the setting is this computer's own; the
+        // party is told so its remotes show it.
+        if (partyNow.isConnect && !partyNow.isRemote) DesktopListenTogether.setAutoplay(enabled)
+        if (partyNow.inJam || partyNow.isRemote) {
             // As on the phone, the server owns the effective setting and queue while connected.
             // Keep the personal preference for after leaving, but do not trim or top up this one
             // device ahead of the server's state broadcast.

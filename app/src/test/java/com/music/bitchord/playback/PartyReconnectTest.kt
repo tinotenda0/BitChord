@@ -62,7 +62,9 @@ class PartyReconnectTest {
     fun `only the device whose playback is the party's speaks for it`() {
         assertFalse(shouldCatchUpOnReconnect(state(clock = "someone-else"), "next-song", true))
         val remote = me.copy(role = PartyMember.ROLE_REMOTE, isHost = false)
-        assertFalse(shouldCatchUpOnReconnect(state(kind = KIND_CONNECT, you = remote, clock = null), "next-song", true))
+        val output = PartyMember(memberId = "output", isHost = true, connected = true)
+        val asRemote = state(kind = KIND_CONNECT, you = remote, clock = null).copy(members = listOf(remote, output))
+        assertFalse(shouldCatchUpOnReconnect(asRemote, "next-song", true))
         assertTrue(shouldCatchUpOnReconnect(state(kind = KIND_CONNECT, clock = null), "next-song", true))
     }
 
