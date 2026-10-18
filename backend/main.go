@@ -1045,8 +1045,15 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Read loop
 	defer func() {
-		hubInst.Detach(p.Code, member.MemberId, sc)
+		current := hubInst.Detach(p.Code, member.MemberId, sc)
 		_ = sc.Close()
+		// A socket replaced by the same device's newer one: the device is still
+		// here. Marking it disconnected anyway left a phone that had merely
+		// reconnected shown as asleep to every device, itself included, and
+		// refused every transfer to it as "not connected".
+		if !current {
+			return
+		}
 
 		p.Lock()
 		p.MarkConnected(member, false)

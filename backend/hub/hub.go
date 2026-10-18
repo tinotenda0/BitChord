@@ -61,20 +61,25 @@ func (h *Hub) Attach(code, memberId string, conn *websocket.Conn) *SafeConn {
 	return sc
 }
 
-func (h *Hub) Detach(code, memberId string, sc *SafeConn) {
+// Detach forgets sc, and reports whether it was still the member's socket. A
+// socket that has already been replaced (the device reconnected) is not, and
+// its going says nothing about whether the member is connected.
+func (h *Hub) Detach(code, memberId string, sc *SafeConn) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	room, ok := h.sockets[code]
 	if !ok {
-		return
+		return false
 	}
-	if room[memberId] == sc {
+	current := room[memberId] == sc
+	if current {
 		delete(room, memberId)
 	}
 	if len(room) == 0 {
 		delete(h.sockets, code)
 	}
+	return current
 }
 
 func (h *Hub) DropParty(code string) {
