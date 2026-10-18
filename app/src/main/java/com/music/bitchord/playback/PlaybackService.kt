@@ -1655,7 +1655,16 @@ class PlaybackService : MediaLibraryService() {
         exoPlayer.addListener(playbackListener)
         // After the player exists and before the session is built: the
         // session's wrapper reports the user's actions to it.
-        partySync = PartySync(scope) { player }.also { it.start() }
+        partySync = PartySync(
+            scope,
+            player = { player },
+            headphonesConnected = {
+                audioManager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.any {
+                    AudioRouting.kindOf(it.type) == AudioRouting.Kind.BLUETOOTH ||
+                        AudioRouting.kindOf(it.type) == AudioRouting.Kind.WIRED
+                } == true
+            },
+        ).also { it.start() }
         connectVolume = ConnectVolume(this, scope).also { it.start() }
         // Fork: the widget redraws once a cover it was missing is found.
         scope.launch {

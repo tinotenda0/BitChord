@@ -3,6 +3,7 @@ package com.music.bitchord.playback
 import android.os.SystemClock
 import androidx.media3.common.Player
 import com.music.bitchord.data.DebugLog as Log
+import com.music.bitchord.data.TrackLog
 import com.music.bitchord.data.listentogether.ListenTogether
 import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.data.listentogether.PartyTrack
@@ -89,6 +90,8 @@ class PartySync(
     private val scope: CoroutineScope,
     /** Read fresh every time: the service swaps players at a crossfade. */
     private val player: () -> Player?,
+    /** Whether headphones (wired or Bluetooth) are among the outputs right now. */
+    private val headphonesConnected: () -> Boolean = { false },
 ) {
 
     private val jobs = mutableListOf<Job>()
@@ -199,6 +202,9 @@ class PartySync(
     private var wasOutput = false
     private var seenControl: PartyControl? = null
     private var seenQueueSeq = -1L
+
+    /** When this device last started playing as the output on being handed playback. */
+    private var outputStartedAtMs = 0L
     /** A song put on this output by the party (a handover, a remote's pick) still to be started. */
     private var startPending = false
 
@@ -350,6 +356,13 @@ class PartySync(
             // Audible again by some route — a rejoin, a headset button, the
             // notification. Whatever it was, following the party is right.
             focusLost = false
+            return
+        }
+        val party = ListenTogether.state.value
+        if (party.isConnect && !party.isRemote && party.you?.memberId != null &&
+            party.output?.memberId == party.you?.memberId
+        ) {
+            onOutputStopped(reason)
             return
         }
         if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_FOCUS_LOSS &&
@@ -531,6 +544,10 @@ class PartySync(
             startJob?.cancel()
             player()?.takeIf { it.playWhenReady }?.pause()
             wasRemote = true
+            // Handed playback again later is a fresh handover, which starts the
+            // music; a stale "already the output" would leave this paused.
+            wasOutput = false
+            startPending = false
             return
         }
         // Handed playback, which is a request to play here: nothing left over
@@ -844,6 +861,34 @@ class PartySync(
         }
     }
 
+    /**
+     * Android stopped the output's player itself: another app took the audio,
+     * headphones went, playback was suppressed too long. None of those go
+     * through the session, so the party went on saying "playing" and every
+     * other device showed a song that had stopped.
+     *
+     * In Connect this device is simply its own player, so a pause is a pause:
+     * it is told to the party like any other. The exception is the route
+     * changing because of a handover: headphones paired with two devices move
+     * their audio over to the one taking playback, and Android reads that
+     * moment as the headphones going. Within [HANDOVER_SETTLE_MS] of starting,
+     * with headphones still there, that pause is undone.
+     */
+    private fun onOutputStopped(reason: Int) {
+        if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) return
+        TrackLog.i("BitChord", "party: the output's player was stopped by the system (reason $reason)")
+        val settling = SystemClock.elapsedRealtime() - outputStartedAtMs < HANDOVER_SETTLE_MS
+        if (reason == Player.PLAY_WHEN_READY_CHANGE_REASON_AUDIO_BECOMING_NOISY &&
+            settling && headphonesConnected()
+        ) {
+            TrackLog.i("BitChord", "party: headphones moved over for the handover; carrying on")
+            player()?.play()
+            return
+        }
+        focusLost = false
+        onLocalIntent()
+    }
+
     /** What another device asked this one, the output, to do: change song, pause, resume, seek. */
     private fun applyRemoteCommand(party: ListenTogether.State, exo: Player) {
         val target = party.playback
@@ -880,6 +925,7 @@ class PartySync(
         if (exo.currentMediaItem?.mediaId != track.videoId) return
         // [load] starts it itself when it can; then there is nothing left to do.
         if (exo.playWhenReady) {
+            outputStartedAtMs = SystemClock.elapsedRealtime()
             startPending = false
             return
         }
@@ -894,6 +940,7 @@ class PartySync(
             return
         }
         ListenTogether.partyPositionMs()?.let(exo::seekTo)
+        outputStartedAtMs = SystemClock.elapsedRealtime()
         exo.play()
         startPending = false
     }
@@ -1322,6 +1369,9 @@ class PartySync(
          * ahead of this device; seeking for that would be an audible skip.
          */
         const val REMOTE_SEEK_MS = 2_500L
+
+        /** How long after a handover a headphone route change is put down to the handover. */
+        const val HANDOVER_SETTLE_MS = 10_000L
 
         /** While paused there is nothing to hear, so the playhead can be exact. */
         const val PAUSED_TOLERANCE_MS = 400L
