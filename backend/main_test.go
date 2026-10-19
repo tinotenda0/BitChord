@@ -443,6 +443,34 @@ func TestInviteDeepLinkUsesPublicOrigin(t *testing.T) {
 	}
 }
 
+func TestInviteOffersJoiningInTheBrowser(t *testing.T) {
+	ts := setupTestServer()
+	defer ts.Close()
+
+	p, err := store.Create()
+	if err != nil {
+		t.Fatalf("Party creation failed: %v", err)
+	}
+	config.WebJoinURL = "https://music.example.com/jam/"
+	t.Cleanup(func() { config.WebJoinURL = "" })
+
+	res, err := http.Get(ts.URL + "/invite/" + p.Code)
+	if err != nil {
+		t.Fatalf("GET /invite/%s failed: %v", p.Code, err)
+	}
+	buf := new(bytes.Buffer)
+	_, _ = buf.ReadFrom(res.Body)
+	content := buf.String()
+
+	if !strings.Contains(content, `href="https://music.example.com/jam/`+p.Code+`"`) {
+		t.Errorf("Expected a link to join %s in the browser, got: %s", p.Code, content)
+	}
+	// Android without the app lands on the web join, not an error.
+	if !strings.Contains(content, "S.browser_fallback_url=https%3A%2F%2Fmusic.example.com%2Fjam%2F"+p.Code) {
+		t.Errorf("Expected the app link to fall back to the web join, got: %s", content)
+	}
+}
+
 func TestInviteLanding(t *testing.T) {
 	ts := setupTestServer()
 	defer ts.Close()

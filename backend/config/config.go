@@ -143,6 +143,10 @@ var (
 	AllowedOrigins       = getCSV("JAM_ALLOWED_ORIGINS", "")
 	TrustProxy           = getBool("JAM_TRUST_PROXY", false)
 	PublicOrigin         = getOrigin("JAM_PUBLIC_ORIGIN")
+	// WebJoinURL, when set, is a web page that joins a jam without the app: the
+	// invite page offers it first and the code is appended (".../jam/" + code).
+	// For somebody invited once, installing an app to join is not worth it.
+	WebJoinURL           = getString("JAM_WEB_JOIN_URL", "")
 	Port                 = getInt("PORT", 8000)
 )
 

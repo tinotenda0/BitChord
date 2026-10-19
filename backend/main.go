@@ -730,6 +730,7 @@ type invitePageData struct {
 	CurrentSongArtist string
 	MemberCount       int
 	IsActive          bool
+	WebJoin           template.URL
 }
 
 var inviteTemplate = template.Must(template.New("invite").Parse(`<!DOCTYPE html>
@@ -880,20 +881,32 @@ var inviteTemplate = template.Must(template.New("invite").Parse(`<!DOCTYPE html>
                     <div class="now-playing">🎵 {{.CurrentSongTitle}} - {{.CurrentSongArtist}}</div>
                 {{end}}
             </div>
+            {{if .WebJoin}}
+            <a id="webBtn" href="{{.WebJoin}}" class="btn">Join in your browser</a>
+            <p class="footer-note">
+                No app needed: search for songs, add them and control the music from your phone.<br>
+                Have BitChord? <a id="joinBtn" href="{{.IntentURI}}">Open it in the app</a>.
+            </p>
+            {{else}}
             <a id="joinBtn" href="{{.IntentURI}}" class="btn">Join Party in BitChord</a>
             <p class="footer-note">
                 Didn’t open automatically? Tap the button above.<br>
                 Don't have BitChord yet? <a href="https://github.com/kushagrasinghx/BitChord/releases" target="_blank" rel="noopener">Download it here</a>.
             </p>
+            {{end}}
             <script>
                 var intentUri = {{.IntentURI}};
                 var deepLink = {{.SafeDeepLink}};
+                var webJoin = {{.WebJoin}};
                 function launch() {
                     if (/Android/i.test(navigator.userAgent)) {
+                        // Falls back to joining in the browser when the app isn't installed.
                         window.location.href = intentUri;
-                    } else {
+                    } else if (!webJoin) {
                         window.location.href = deepLink;
                     }
+                    // Elsewhere, with a web join: an app link that isn't installed shows an
+                    // error on iOS, so the page waits for a tap instead.
                 }
                 setTimeout(launch, 100);
             </script>
@@ -962,6 +975,14 @@ func handleInviteLanding(w http.ResponseWriter, r *http.Request) {
 
 	deepLink := fmt.Sprintf("bitchord://party/%s?server=%s", url.PathEscape(code), url.QueryEscape(origin))
 	intentURI := fmt.Sprintf("intent://party/%s?server=%s#Intent;scheme=bitchord;end", url.PathEscape(code), url.QueryEscape(origin))
+	webJoin := ""
+	if config.WebJoinURL != "" {
+		webJoin = config.WebJoinURL + url.PathEscape(code)
+		// Android opens the app when it's installed and this page in the browser
+		// when it isn't, rather than an error.
+		intentURI = fmt.Sprintf("intent://party/%s?server=%s#Intent;scheme=bitchord;S.browser_fallback_url=%s;end",
+			url.PathEscape(code), url.QueryEscape(origin), url.QueryEscape(webJoin))
+	}
 
 	currentSongTitle := ""
 	currentSongArtist := ""
@@ -979,6 +1000,7 @@ func handleInviteLanding(w http.ResponseWriter, r *http.Request) {
 		DeepLink:          deepLink,
 		IntentURI:         template.URL(intentURI),
 		SafeDeepLink:      template.URL(deepLink),
+		WebJoin:           template.URL(webJoin),
 		ServerOrigin:      origin,
 		CurrentSongTitle:  currentSongTitle,
 		CurrentSongArtist: currentSongArtist,
