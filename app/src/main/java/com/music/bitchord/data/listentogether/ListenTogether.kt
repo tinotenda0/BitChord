@@ -221,7 +221,12 @@ object ListenTogether {
                 // the ping below are what say whether it is.
                 readTimeout(0, TimeUnit.MILLISECONDS)
                 connectTimeout(15, TimeUnit.SECONDS)
-                pingInterval(20, TimeUnit.SECONDS)
+                // Fork: a socket is given up on when a ping goes unanswered for
+                // a whole interval. At 20s a phone on mobile data, or one Android
+                // was holding back to save battery, gave up every 40s or so and
+                // reconnected, and every reconnect was a chance to go wrong. A
+                // minute still finds a dead socket long before anyone notices.
+                pingInterval(60, TimeUnit.SECONDS)
                 retryOnConnectionFailure(true)
             }
         }
@@ -1361,13 +1366,20 @@ object ListenTogether {
         send(frame)
     }
 
+    /**
+     * Fork: frames go out in the order they were sent. Each used to go from its
+     * own coroutine, so two sent back to back could arrive either way round, and
+     * the protocol depends on order: a queue then the track in it, a claim of the
+     * output then the state it is about. One outbox per socket, so nothing meant
+     * for a socket that has died is replayed down the next one.
+     */
     private fun send(frame: JsonObject) {
-        val live = session ?: return
-        scope.launch {
-            runCatching { live.send(Frame.Text(frame.toString())) }
-                .onFailure { Log.w(TAG, "control not sent: ${redact(it.message)}") }
-        }
+        if (session == null) return
+        outbox?.trySend(frame.toString())
     }
+
+    @Volatile
+    private var outbox: kotlinx.coroutines.channels.Channel<String>? = null
 
     /**
      * A resume this device has accepted but is not allowed to perform yet.
@@ -1455,7 +1467,15 @@ object ListenTogether {
                     urlString = "${wsBase()}/ws/parties/$code",
                     request = { header("Authorization", "Bearer $held") },
                 ) {
+                    val frames = kotlinx.coroutines.channels.Channel<String>(kotlinx.coroutines.channels.Channel.UNLIMITED)
+                    outbox = frames
                     session = this
+                    launch {
+                        for (text in frames) {
+                            runCatching { send(Frame.Text(text)) }
+                                .onFailure { Log.w(TAG, "control not sent: ${redact(it.message)}") }
+                        }
+                    }
                     backoffMs = 1_000L
                     // Not LIVE yet. Until the welcome lands, everything held here
                     // is what was true before the gap, and the player layer
@@ -1474,6 +1494,8 @@ object ListenTogether {
                 Log.w(TAG, "party socket dropped: ${redact(failure.message)}")
             } finally {
                 session = null
+                outbox?.close()
+                outbox = null
             }
             if (!currentScopeActive()) return
             // A socket that cannot be opened is either the network or a

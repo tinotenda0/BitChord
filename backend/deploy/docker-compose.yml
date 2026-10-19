@@ -18,6 +18,9 @@ services:
       # check). Native apps send no Origin and aren't affected. The web player
       # at music.tinotenda.co joins its account's devices here, as a phone does.
       JAM_ALLOWED_ORIGINS: "https://music.tinotenda.co"
+      # Somebody invited to a jam without the app joins it in the web player,
+      # as a guest: the invite page offers this first.
+      JAM_WEB_JOIN_URL: "https://music.tinotenda.co/jam/"
       JAM_MAX_MEMBERS: "5"
       JAM_MAX_REMOTES: "5"
       JAM_MAX_PARTIES: "50"

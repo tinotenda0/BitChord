@@ -37,8 +37,21 @@ interface PartyView {
      */
     val controlsLocked: Boolean get() = inParty && hostOnlyControl && you?.isHost != true
 
-    /** This device drives the party without playing it. */
-    val isRemote: Boolean get() = inParty && you?.isRemote == true
+    /**
+     * This device drives the party without playing it.
+     *
+     * In Connect only while the device playing is actually there: with it
+     * offline this device is simply its own player again, and becomes the
+     * output if its owner presses play. Showing the controls of a device that
+     * dropped off, with nothing coming out of this one, is what left a phone
+     * unable to play anything while the tablet it was "controlling" sat at home.
+     */
+    val isRemote: Boolean get() {
+        if (!inParty || you?.isRemote != true) return false
+        if (!isConnect) return true
+        val playing = members.firstOrNull { it.isHost && !it.isRemote } ?: return false
+        return playing.connected && playing.memberId != you?.memberId
+    }
 
     /** This device's real playhead is the one the party follows. */
     val isClock: Boolean get() {

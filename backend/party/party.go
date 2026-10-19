@@ -593,6 +593,11 @@ type Party struct {
 	// before PendingUntilMs it is handed it, whatever is playing elsewhere.
 	PendingOutput  string
 	PendingUntilMs int64
+	// OutputDevice is the device (deviceKey:app) a Connect party plays on, kept
+	// while that device is away: playback moves only when somebody moves it
+	// (a transfer, or pressing play on another device), never because the device
+	// playing dropped off the network for a moment.
+	OutputDevice string
 }
 
 func NewParty(code string) *Party {
@@ -715,10 +720,16 @@ func (p *Party) JoinAs(userId, deviceId, displayName string, avatarUrl *string, 
 // member it was instead of piling up as another, and the stable and dev builds
 // on one phone are two members of the same phone rather than two phones.
 //
-// It plays when nothing else is: no output, an output that is not connected, or
-// one that has been paused for longer than ConnectHandoverMs. Otherwise it joins
-// as a remote for what is already playing, the way opening Spotify on a laptop
-// shows the music coming out of the phone.
+// It is the output when it is the device the party plays on (OutputDevice), or
+// when no device is and it arrives with music coming out of it. Every other
+// device joins as a remote, the way opening Spotify on a laptop shows the music
+// coming out of the phone; while the output is away a remote simply plays on its
+// own (see PartyView.isRemote on the apps), and becomes the output only if its
+// owner presses play on it.
+//
+// Nothing here moves playback off the output: not the output being offline, not
+// it being paused for a while. Both did, and a tablet left open at home took
+// the music off a phone that lost signal in a car.
 func (p *Party) JoinConnect(userId, deviceKey, app, deviceName, displayName string, avatarUrl *string, playing ...bool) (*Member, error) {
 	isPlaying := len(playing) > 0 && playing[0]
 	deviceId := deviceKey + ":" + app
@@ -763,20 +774,15 @@ func (p *Party) JoinConnect(userId, deviceKey, app, deviceName, displayName stri
 		return m, nil
 	}
 
-	host := p.Host()
-	idle := !p.Playback.IsPlaying && now-p.Playback.UpdatedAtMs > config.ConnectHandoverMs
-	// A device arriving with music already coming out of it is the output,
-	// unless another device is actually playing the party. That is the device
-	// that lost its membership mid-song; making it a remote would stop the music.
-	claims := isPlaying && !(p.Playback.IsPlaying && host != nil && host != m && host.Connected && !host.IsRemote())
-	if host == nil || host == m || host.IsRemote() || !host.Connected || idle || claims {
-		// Taking over from an output that is not there: whatever it was
-		// "playing" stopped when it went, so this device starts paused there.
-		if host != m && p.Playback.IsPlaying && (host == nil || !host.Connected) {
-			p.Playback.Pause(nil, nil)
-		}
+	switch {
+	case p.OutputDevice == deviceId:
+		// The device the party plays on, back.
 		p.setOutput(m)
-	} else {
+	case p.OutputDevice == "" && isPlaying:
+		// Nothing is the output yet (a fresh party, or one the server lost
+		// on a restart) and this device is playing: it is.
+		p.setOutput(m)
+	default:
 		m.Role = protocol.RoleRemote
 		m.IsHost = false
 	}
@@ -827,6 +833,7 @@ func (p *Party) setOutput(m *Member) {
 	}
 	m.IsHost = true
 	m.Role = protocol.RoleSpeaker
+	p.OutputDevice = m.DeviceId
 	p.LastReanchorMs = 0
 	// A different device, with its own volume, which it has not said yet.
 	// The request count carries on, so the new output can tell a request made
@@ -1123,18 +1130,16 @@ func (p *Party) Remove(memberId string) *Member {
 	}
 	delete(p.Members, memberId)
 	if m.IsHost {
-		p.electHost(nil)
 		if p.IsConnect() {
-			// Nobody is playing it any more, so the party stops where the
-			// output did rather than running on, on paper, for whichever device
-			// opens next to land far into the song. Playback moves to a device
-			// that is still here, paused, for its owner to resume.
+			// The output has been gone past its grace. Its place is kept
+			// (OutputDevice), so it is the output again when it is back, and no
+			// other device is handed the music meanwhile: the party stops where
+			// the output did rather than running on, on paper.
 			if p.Playback.IsPlaying {
 				p.Playback.Pause(nil, nil)
 			}
-			if h := p.Host(); h != nil && h.IsRemote() {
-				h.Role = protocol.RoleSpeaker
-			}
+		} else {
+			p.electHost(nil)
 		}
 	}
 	p.Touch()

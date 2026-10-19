@@ -82,10 +82,16 @@ internal fun ConnectDevicesSheet(
             deviceName = member.deviceName.ifBlank { member.displayName },
             member = member,
             known = state.devices.firstOrNull { it.deviceKey == member.deviceKey && it.app == member.app },
+            self = member.memberId == you?.memberId,
         )
     } + state.devices
         .filter { known -> state.members.none { it.deviceKey == known.deviceKey && it.app == known.app } }
-        .map { DeviceEntry(it.deviceKey, it.app, it.deviceName, member = null, known = it) }
+        .map {
+            DeviceEntry(
+                it.deviceKey, it.app, it.deviceName, member = null, known = it,
+                self = it.deviceKey == you?.deviceKey && it.app == you?.app,
+            )
+        }
     // This device first, then wherever the music is, then everything else by name.
     val groups = entries
         .groupBy { it.deviceKey }
@@ -188,9 +194,11 @@ private data class DeviceEntry(
     val deviceName: String,
     val member: PartyMember?,
     val known: ConnectDevice?,
+    /** This device. Never asleep to itself, whatever the server last heard. */
+    val self: Boolean = false,
 ) {
     /** Not connected at all, so reaching it means waking it. */
-    val sleeping: Boolean get() = member == null || !member.connected
+    val sleeping: Boolean get() = !self && (member == null || !member.connected)
 
     /** Away from Connect because it is in a jam, not because it is asleep. */
     val inJam: Boolean get() = sleeping && known?.status == "jam"
@@ -205,6 +213,9 @@ private data class DeviceEntry(
         val host = PlayerPlatform.host
         return when {
             isOutput(outputId) -> null
+            // "Play here": this device takes the music, whatever state its
+            // connection is in. The claim goes out when the socket is up.
+            self -> host.connect.value.you?.memberId?.let { me -> { host.connectTransfer(me) } }
             member != null && member.connected -> { { host.connectTransfer(member.memberId) } }
             // Busy in a jam: waking it would drag it out of that, which is its
             // owner's call to make on that device, not this one's.

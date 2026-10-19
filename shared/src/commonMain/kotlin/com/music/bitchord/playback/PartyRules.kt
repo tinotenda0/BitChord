@@ -157,3 +157,26 @@ fun partyUpcomingToKeep(party: PartyView, upcoming: List<PartyTrack>): List<Part
     if (party.ownsQueue) return emptyList()
     return upcoming.filterNot { it.fromAutoplay || it.fromContext }.take(party.maxUpcoming)
 }
+
+/** The party's last control: who made it, and when. */
+data class PartyControl(val by: String?, val atMs: Long)
+
+fun PartyView.lastControl(): PartyControl = PartyControl(playback.updatedBy, playback.updatedAtMs)
+
+/**
+ * Whether the device playing Connect acts on the party's last control.
+ *
+ * The device playing is the one in charge: it tells the party what it is doing
+ * and does not follow the party's copy back, because that copy is only ever as
+ * fresh as the last moment the two could talk. Following it is what looped a
+ * song from part way in, resumed a pause and brought back an old queue, every
+ * time a phone on mobile data dropped and reconnected.
+ *
+ * What it does act on is a command from another of the account's devices (a
+ * remote pressing next, say), and each one once: a control it has [seen], or
+ * one of its own coming back, is not acted on again.
+ */
+fun outputShouldApply(party: PartyView, seen: PartyControl?): Boolean {
+    val last = party.lastControl()
+    return last != seen && last.by != null && last.by != party.you?.memberId
+}

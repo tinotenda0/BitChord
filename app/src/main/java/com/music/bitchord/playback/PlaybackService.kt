@@ -1655,7 +1655,16 @@ class PlaybackService : MediaLibraryService() {
         exoPlayer.addListener(playbackListener)
         // After the player exists and before the session is built: the
         // session's wrapper reports the user's actions to it.
-        partySync = PartySync(scope) { player }.also { it.start() }
+        partySync = PartySync(
+            scope,
+            player = { player },
+            headphonesConnected = {
+                audioManager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.any {
+                    AudioRouting.kindOf(it.type) == AudioRouting.Kind.BLUETOOTH ||
+                        AudioRouting.kindOf(it.type) == AudioRouting.Kind.WIRED
+                } == true
+            },
+        ).also { it.start() }
         connectVolume = ConnectVolume(this, scope).also { it.start() }
         // Fork: the widget redraws once a cover it was missing is found.
         scope.launch {
@@ -2025,7 +2034,8 @@ class PlaybackService : MediaLibraryService() {
         // [ListenTogether]'s own note on why Automix stays off in a party for
         // the same reason. The toggle is hidden client-side for this, but the
         // command can still arrive from a controller that predates the hide.
-        if (ListenTogether.state.value.inParty) {
+        // Fork: only a jam; in Connect the one device playing hears what it chose.
+        if (ListenTogether.state.value.inJam) {
             TrackLog.d("BitChord", "version swap ignored: in a Listen Together party", about = currentItem.mediaId)
             return
         }
@@ -2480,9 +2490,16 @@ class PlaybackService : MediaLibraryService() {
 
     private fun toggleAutoplayFromNotification() {
         val party = ListenTogether.state.value
-        val enabled = if (party.inParty) !party.playback.autoplayEnabled else !AppSettings.autoplay.value
+        val enabled = if (party.inJam || party.isRemote) {
+            !party.playback.autoplayEnabled
+        } else {
+            !AppSettings.autoplay.value
+        }
         AppSettings.setAutoplay(enabled)
-        if (party.inParty) {
+        // Connect, as the device playing: the setting is this device's own. The
+        // party is told so its remotes show it, and nothing waits on it.
+        if (party.isConnect && !party.isRemote) ListenTogether.setAutoplay(enabled)
+        if (party.inJam || party.isRemote) {
             // The party owns this setting while connected. The state frame
             // wakes whichever connected member currently won the supplier
             // election, including after the host has become unreachable.
@@ -2553,7 +2570,7 @@ class PlaybackService : MediaLibraryService() {
                 }
                 val queueSongs = (0 until activePlayer.mediaItemCount)
                     .map { activePlayer.getMediaItemAt(it).toSong() } +
-                    activeParty.queue.items.takeIf { activeParty.inParty }.orEmpty().map { it.toSong() }
+                    activeParty.queue.items.takeIf { activeParty.inJam }.orEmpty().map { it.toSong() }
                 val existing = if (AppSettings.dontRepeatSuggestions.value) {
                     queueSongs + sessionSongHistory
                 } else {
@@ -2578,7 +2595,7 @@ class PlaybackService : MediaLibraryService() {
                     return@launch
                 }
                 if (resolved.isNotEmpty()) {
-                    if (latestParty.inParty) {
+                    if (latestParty.inJam) {
                         // Do not mutate ExoPlayer directly here. The server's
                         // state broadcast reconciles every device atomically,
                         // including this one, and keeps the AutoPlay section
@@ -2597,6 +2614,8 @@ class PlaybackService : MediaLibraryService() {
                         }
                     } else {
                         latestPlayer.addMediaItems(resolved.map { it.toMediaItem() })
+                        // Connect: this device's queue is the one; the party mirrors it.
+                        if (latestParty.isConnect) partySync?.onLocalIntent()
                     }
                     if (AppSettings.dontRepeatSuggestions.value) sessionSongHistory += resolved
                     return@launch
@@ -2622,7 +2641,8 @@ class PlaybackService : MediaLibraryService() {
      * or null outside a party or while its queue does not hold that track yet.
      */
     private fun partyAutoplayWaiting(party: ListenTogether.State, videoId: String): Int? {
-        if (!party.inParty) return null
+        // Fork: in Connect this device's own queue is the one being topped up.
+        if (!party.inJam) return null
         if (partyQueueIndexOf(party.queue, party.playback, videoId) < 0) return null
         return partyUpcomingAfter(party.queue, party.playback, videoId).count { it.fromAutoplay }
     }

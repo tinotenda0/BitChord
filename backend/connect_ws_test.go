@@ -70,8 +70,10 @@ func TestConnectAccountDevicesFindEachOther(t *testing.T) {
 	defer ts.Close()
 	fakeGateway(t)
 
-	// Capitalised by a phone keyboard: still the same account.
-	status, phone := postJSON(t, ts.URL+"/api/connect", connectBody("Tino", "secret", "phone0001", "prod"))
+	// Capitalised by a phone keyboard: still the same account. Playing, so the output.
+	first := connectBody("Tino", "secret", "phone0001", "prod")
+	first["playing"] = true
+	status, phone := postJSON(t, ts.URL+"/api/connect", first)
 	if status != http.StatusOK {
 		t.Fatalf("connect failed: %d %v", status, phone)
 	}
@@ -116,6 +118,47 @@ func TestConnectAccountDevicesFindEachOther(t *testing.T) {
 	status, again := postJSON(t, ts.URL+"/api/connect", connectBody("tino", "secret", "phone0001", "prod"))
 	if status != http.StatusOK || again["you"].(map[string]interface{})["memberId"] != phone["you"].(map[string]interface{})["memberId"] {
 		t.Fatalf("the same device must come back as the same member")
+	}
+}
+
+// A phone that reconnects opens a new socket before the server has noticed the
+// old one is gone; the server closes the old one. Its going must not mark the
+// phone disconnected while the new socket is live: that showed a phone that
+// had only reconnected as asleep, and refused every transfer to it.
+func TestAReplacedSocketLeavesTheDeviceConnected(t *testing.T) {
+	ts := setupTestServer()
+	defer ts.Close()
+	fakeGateway(t)
+
+	body := connectBody("tino", "secret", "phone0001", "prod")
+	body["playing"] = true
+	status, phone := postJSON(t, ts.URL+"/api/connect", body)
+	if status != http.StatusOK {
+		t.Fatalf("connect failed: %d %v", status, phone)
+	}
+	code, token := phone["code"].(string), phone["token"].(string)
+	first := dialParty(t, ts.URL, code, token)
+	defer first.Close()
+	nextFrame(t, first, protocol.FrameWelcome)
+	second := dialParty(t, ts.URL, code, token)
+	defer second.Close()
+	nextFrame(t, second, protocol.FrameWelcome)
+	// The server has closed the first socket; give its cleanup time to run.
+	time.Sleep(200 * time.Millisecond)
+
+	status, laptop := postJSON(t, ts.URL+"/api/connect", connectBody("tino", "secret", "laptop001", "prod"))
+	if status != http.StatusOK {
+		t.Fatalf("laptop connect failed: %d", status)
+	}
+	members := laptop["party"].(map[string]interface{})["members"].([]interface{})
+	for _, raw := range members {
+		m := raw.(map[string]interface{})
+		if m["deviceKey"] == "phone0001" && m["connected"] != true {
+			t.Fatalf("a phone with a live socket must be connected, got %v", m)
+		}
+	}
+	if laptop["you"].(map[string]interface{})["role"] != protocol.RoleRemote {
+		t.Errorf("with the phone still there and playing, the laptop is its remote")
 	}
 }
 

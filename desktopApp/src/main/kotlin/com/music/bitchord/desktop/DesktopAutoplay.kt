@@ -15,6 +15,8 @@ internal object DesktopAutoplay {
     /** The same deterministic party supplier election used by the phone. */
     fun supplierId(party: DesktopListenTogether.State): String? {
         if (!party.inParty) return null
+        // Fork: in Connect the device playing tops up its own queue, as on the phone.
+        if (party.isConnect) return if (party.isRemote) party.output?.memberId else party.you?.memberId
         val host = party.members.firstOrNull { it.isHost && it.connected }?.memberId
         if (party.hostOnlyControl) return host
         return host ?: party.members.asSequence()
@@ -24,7 +26,8 @@ internal object DesktopAutoplay {
     }
 
     fun enabled(party: DesktopListenTogether.State, localPreference: Boolean): Boolean =
-        if (party.inParty) party.playback.autoplayEnabled else localPreference
+        // Fork: only a jam shares the setting; in Connect it is the playing device's own.
+        if (party.inJam) party.playback.autoplayEnabled else localPreference
 
     /** Same re-arm rule as the phone when a queue edit exposes the current track as the tail. */
     fun queueNeedsRefresh(

@@ -99,9 +99,6 @@ var (
 	ConnectMaxDevices    = getInt("JAM_CONNECT_MAX_DEVICES", 10)
 	// How long an account's party outlives its last connected device.
 	ConnectIdleTTLMs     = int64(getInt("JAM_CONNECT_IDLE_TTL_MS", 6*60*60*1000))
-	// How long the output may sit paused before a device that opens takes
-	// playback over, instead of joining as a remote for a speaker nobody is using.
-	ConnectHandoverMs    = int64(getInt("JAM_CONNECT_HANDOVER_MS", 5*60*1000))
 	// How far ahead a transferred song restarts, for the new device to load it.
 	TransferLeadMs       = int64(getInt("JAM_TRANSFER_LEAD_MS", 1500))
 	// Connect holds a whole playlist, not a jam's handful of picks: it is one
@@ -146,6 +143,10 @@ var (
 	AllowedOrigins       = getCSV("JAM_ALLOWED_ORIGINS", "")
 	TrustProxy           = getBool("JAM_TRUST_PROXY", false)
 	PublicOrigin         = getOrigin("JAM_PUBLIC_ORIGIN")
+	// WebJoinURL, when set, is a web page that joins a jam without the app: the
+	// invite page offers it first and the code is appended (".../jam/" + code).
+	// For somebody invited once, installing an app to join is not worth it.
+	WebJoinURL           = getString("JAM_WEB_JOIN_URL", "")
 	Port                 = getInt("PORT", 8000)
 )
 

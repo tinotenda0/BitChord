@@ -29,7 +29,9 @@ const val MAX_QUEUED_AUTOPLAY = 10
  * it, and watch the label stay exactly as it was.
  */
 fun autoplayEnabledFor(party: ListenTogether.State, localPreference: Boolean): Boolean =
-    if (party.inParty) party.playback.autoplayEnabled else localPreference
+    // Fork: in Connect the queue is the playing device's own, and so is the
+    // setting; only a jam shares one.
+    if (party.inJam) party.playback.autoplayEnabled else localPreference
 
 /**
  * The one device in a party that tops the queue up, or null if there is none.
@@ -48,9 +50,11 @@ fun autoplayEnabledFor(party: ListenTogether.State, localPreference: Boolean): B
  */
 fun autoplaySupplierId(party: ListenTogether.State): String? {
     if (!party.inParty) return null
-    // Connect has one device playing and the rest are remotes with nothing on
-    // their players to extend, so only the output ever tops the queue up.
-    if (party.isConnect) return party.output?.takeIf { it.connected }?.memberId
+    // Connect: the device playing tops up its own queue, including a device
+    // playing on its own while the output is away. Whether the server can be
+    // reached has nothing to do with it; requiring that is what let a song
+    // started from Home end in silence.
+    if (party.isConnect) return if (party.isRemote) party.output?.memberId else party.you?.memberId
     val host = party.members.firstOrNull { it.isHost && it.connected }?.memberId
     if (party.hostOnlyControl) return host
     return host ?: party.members.asSequence()
