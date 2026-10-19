@@ -873,7 +873,11 @@ var inviteTemplate = template.Must(template.New("invite").Parse(`<!DOCTYPE html>
                 <span>Listen Together • {{.MemberCount}} in party</span>
             </div>
             <h1>Join the Music Party</h1>
+            {{if .WebJoin}}
+            <p class="subtitle">Add songs and control the music together, from the app or your browser.</p>
+            {{else}}
             <p class="subtitle">Opening BitChord to sync playback in real time.</p>
+            {{end}}
             <div class="code-box">
                 <div class="code-label">Party Code</div>
                 <div class="code-val">{{.Code}}</div>
