@@ -559,6 +559,10 @@ type Party struct {
 	Kind       string
 	// Account is the gateway account a Connect party belongs to.
 	Account    string
+	// HostAccount is the gateway account that started a jam, when its login
+	// checked out. The gateway reads it from the preview to show the jam's web
+	// guests that account's playlists.
+	HostAccount string
 	Members    map[string]*Member
 	Playback   *PlaybackState
 	MaxMembers int

@@ -269,6 +269,8 @@ internal object DesktopListenTogether {
         maxMembers: Int = 5,
         autoplayEnabled: Boolean = false,
     ): Result<String> = enter(nickname) { who, server ->
+        // Fork: who is hosting, as the gateway knows them, for the jam's web guests.
+        val login = DesktopGateway.tokenLogin()
         post(
             "$server/api/parties",
             JoinRequest(
@@ -278,6 +280,9 @@ internal object DesktopListenTogether {
                 who.avatar,
                 maxMembers.coerceIn(2, 10),
                 autoplayEnabled,
+                gatewayUser = login?.first,
+                gatewayToken = login?.second,
+                gatewaySalt = login?.third,
             ),
         )
     }

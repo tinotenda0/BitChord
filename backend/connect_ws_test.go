@@ -249,3 +249,35 @@ func TestBrowserJoinsWithItsTokenInTheSubprotocol(t *testing.T) {
 		t.Fatalf("an origin that isn't allowed must be refused")
 	}
 }
+
+func TestAJamRemembersTheAccountThatStartedIt(t *testing.T) {
+	ts := setupTestServer()
+	defer ts.Close()
+	fakeGateway(t)
+	unlimitedCreates(t)
+
+	create := func(body map[string]interface{}) string {
+		t.Helper()
+		body["userId"] = "user0001"
+		body["deviceId"] = "device0001:prod"
+		body["displayName"] = "Tino"
+		status, out := postJSON(t, ts.URL+"/api/parties", body)
+		if status != http.StatusCreated {
+			t.Fatalf("create failed: %d %v", status, out)
+		}
+		return out["code"].(string)
+	}
+
+	signedIn := store.Find(create(login("Tino", "secret", "salt1")))
+	if signedIn == nil || signedIn.HostAccount != "tino" {
+		t.Fatalf("a jam started with a good gateway login must name that account")
+	}
+	wrong := store.Find(create(login("tino", "wrong", "salt2")))
+	if wrong == nil || wrong.HostAccount != "" {
+		t.Fatalf("a login that doesn't check out must not be taken at its word")
+	}
+	none := store.Find(create(map[string]interface{}{}))
+	if none == nil || none.HostAccount != "" {
+		t.Fatalf("a jam started without a login has no account")
+	}
+}

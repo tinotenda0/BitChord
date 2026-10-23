@@ -164,6 +164,12 @@ type JoinRequest struct {
 	// Role is RoleSpeaker or RoleRemote. Absent means speaker, which is what
 	// every member was before remotes existed.
 	Role string `json:"role,omitempty"`
+	// Optional on creating a jam: the host's gateway login, checked like a
+	// Connect sign-in. A jam that has one lets its web guests play the host's
+	// playlists (see Party.HostAccount).
+	GatewayUser  string `json:"gatewayUser,omitempty"`
+	GatewayToken string `json:"gatewayToken,omitempty"`
+	GatewaySalt  string `json:"gatewaySalt,omitempty"`
 }
 
 // Member roles. A speaker plays the party out loud; a remote only drives it,

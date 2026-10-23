@@ -381,6 +381,15 @@ func handleCreateParty(w http.ResponseWriter, r *http.Request) {
 	if req.AutoplayEnabled != nil {
 		p.Playback.AutoplayEnabled = *req.AutoplayEnabled
 	}
+	// A login that doesn't check out still makes a jam, just one whose guests
+	// see no playlists of the host's.
+	if req.GatewayUser != "" && verifier.Enabled() {
+		if account, err := verifier.Verify(r.Context(), req.GatewayUser, req.GatewayToken, req.GatewaySalt); err == nil {
+			p.Lock()
+			p.HostAccount = account
+			p.Unlock()
+		}
+	}
 
 	p.Lock()
 	m, err := p.Join(req.UserId, req.DeviceId, req.DisplayName, req.AvatarUrl)
@@ -629,6 +638,9 @@ func handlePreviewParty(w http.ResponseWriter, r *http.Request) {
 		"maxMembers":  p.MaxMembers,
 		"isFull":      p.SpeakerCount() >= p.MaxMembers,
 		"members":     members,
+	}
+	if p.HostAccount != "" {
+		preview["hostAccount"] = p.HostAccount
 	}
 	p.Unlock()
 

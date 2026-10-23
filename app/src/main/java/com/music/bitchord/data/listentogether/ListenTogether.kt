@@ -1011,11 +1011,16 @@ object ListenTogether {
     private suspend fun doCreateOnServer(serverBase: String, nickname: String, maxMembers: Int): String {
         val who = identity(nickname) ?: throw PartyException("not_signed_in", "Sign in to listen together.")
         if (serverBase.isBlank()) throw PartyException("no_server", "Set the party server address first.")
+        // Fork: who is hosting, as the gateway knows them, for the jam's web guests.
+        val login = com.music.bitchord.gateway.Gateway.tokenLogin()
         val membership = post(
             "$serverBase/api/parties",
             JoinRequest(
                 who.userId, who.deviceId, who.name, who.avatar, maxMembers,
                 autoplayEnabled = AppSettings.autoplay.value,
+                gatewayUser = login?.first,
+                gatewayToken = login?.second,
+                gatewaySalt = login?.third,
             ),
         )
 

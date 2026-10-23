@@ -237,6 +237,13 @@ data class JoinRequest(
     val autoplayEnabled: Boolean? = null,
     /** Null joins as a speaker, and keeps the request identical to before remotes. */
     val role: String? = null,
+    /**
+     * Fork: on starting a jam, the host's gateway login (Subsonic token form), so the jam's
+     * web guests can play the host's playlists. Null when not signed in to the gateway.
+     */
+    val gatewayUser: String? = null,
+    val gatewayToken: String? = null,
+    val gatewaySalt: String? = null,
 )
 
 const val KIND_JAM = "jam"
