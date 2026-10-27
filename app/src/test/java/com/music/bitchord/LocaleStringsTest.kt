@@ -52,24 +52,29 @@ class LocaleStringsTest(private val tag: String) {
         private val baseKeys: Set<String> by lazy {
             translatableKeys(parse(File(resDir, "values/strings.xml")))
         }
+
+        /**
+         * App language tags are BCP-47 (`zh-CN` / `zh-TW`) while Android
+         * resource directories use `-r` regions (`values-zh`, `values-zh-rTW`).
+         * Mirrors what Android resolves at runtime: Simplified is the bare
+         * `zh` catalogue, Traditional is `zh-rTW`.
+         */
+        internal fun tagToQualifier(tag: String): String = when (tag) {
+            "zh-CN" -> "zh"
+            "zh-TW" -> "zh-rTW"
+            else -> tag
+        }
     }
 
     @Test
     fun strings_containsAllBaseKeys() {
-        // A region tag is a folder Android spells with an r ("zh-TW" -> values-zh-rTW), and
-        // falls back to the bare language (zh-CN -> values-zh) when there is no regional one.
-        val language = tag.substringBefore('-')
-        val region = tag.substringAfter('-', "")
-        val folder = listOfNotNull(
-            region.takeIf { it.isNotEmpty() }?.let { "values-$language-r$it" },
-            "values-$language",
-        ).firstOrNull { File(resDir, "$it/strings.xml").exists() } ?: "values-$tag"
-        val localeFile = File(resDir, "$folder/strings.xml")
-        assertTrue("$folder/strings.xml must exist", localeFile.exists())
+        val qualifier = tagToQualifier(tag)
+        val localeFile = File(resDir, "values-$qualifier/strings.xml")
+        assertTrue("values-$qualifier/strings.xml must exist (for language tag $tag)", localeFile.exists())
 
         val missingKeys = baseKeys - translatableKeys(parse(localeFile))
         assertTrue(
-            "$folder/strings.xml is missing ${missingKeys.size} keys from values/strings.xml: $missingKeys",
+            "values-$qualifier/strings.xml (language $tag) is missing ${missingKeys.size} keys from values/strings.xml: $missingKeys",
             missingKeys.isEmpty(),
         )
     }

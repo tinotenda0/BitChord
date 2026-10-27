@@ -20,6 +20,8 @@ import (
 )
 
 func setupTestServer() *httptest.Server {
+	// Each test server starts with its own party-creation allowance.
+	createLimiter = newIPRateLimiter(time.Minute, config.CreateRatePerMinute, config.RateLimitMaxEntries)
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", handleRoot)
 	mux.HandleFunc("GET /healthz", handleHealthz)
@@ -323,6 +325,34 @@ func TestPresence(t *testing.T) {
 		t.Fatalf("got %+v, want the closed pc gone", got)
 	}
 
+	// The web player counts as its own platform, from its allowed origin only.
+	const web = "5a6b7c8d-1e2f-4a3b-9c4d-0e1f2a3b4c5d"
+	const webOrigin = "https://web.example.test"
+	prev := config.AllowedOrigins
+	config.AllowedOrigins = []string{webOrigin}
+	defer func() { config.AllowedOrigins = prev }()
+	webPing := `{"id":"` + web + `","platform":"browser","open":true}`
+	if res := postPresence(t, ts, webPing, webOrigin); res.StatusCode != http.StatusOK {
+		t.Fatalf("browser ping: status %d", res.StatusCode)
+	}
+	presenceTracker.Sweep(clock.NowMs())
+	if got := liveStats(t, ts); got.Online != 2 || got.Android != 1 || got.Browser != 1 {
+		t.Fatalf("got %+v, want 2 online (1 android, 1 browser)", got)
+	}
+	for name, origin := range map[string]string{"no origin": "", "other origin": "https://example.com"} {
+		if res := postPresence(t, ts, webPing, origin); res.StatusCode != http.StatusForbidden {
+			t.Errorf("browser ping with %s: status %d, want 403", name, res.StatusCode)
+		}
+	}
+	if res := postPresence(t, ts, `{"id":"`+pc+`","platform":"pc","open":true}`, webOrigin); res.StatusCode != http.StatusForbidden {
+		t.Errorf("native platform from the web origin: status %d, want 403", res.StatusCode)
+	}
+	postPresence(t, ts, `{"id":"`+web+`","platform":"browser","open":false}`, webOrigin)
+	presenceTracker.Sweep(clock.NowMs())
+	if got := liveStats(t, ts); got.Online != 1 || got.Browser != 0 {
+		t.Fatalf("got %+v, want the closed browser gone", got)
+	}
+
 	rejected := []struct {
 		name   string
 		body   string
@@ -509,5 +539,43 @@ func TestInviteLanding(t *testing.T) {
 	}
 	if !strings.Contains(content, code) {
 		t.Errorf("Expected HTML content to contain party code %s", code)
+	}
+}
+
+// A browser offers the token as a subprotocol (it cannot set Authorization on
+// a WebSocket). The server answers with the protocol name alone, never the token.
+func TestWebSocketTokenAsSubprotocol(t *testing.T) {
+	ts := setupTestServer()
+	defer ts.Close()
+
+	b, _ := json.Marshal(map[string]string{"userId": "u1", "deviceId": "d1", "displayName": "Host"})
+	res, _ := http.Post(ts.URL+"/api/parties", "application/json", bytes.NewReader(b))
+	var created map[string]interface{}
+	_ = json.NewDecoder(res.Body).Decode(&created)
+	code := created["code"].(string)
+	token := created["token"].(string)
+
+	u, _ := url.Parse(ts.URL)
+	u.Scheme = "ws"
+	u.Path = fmt.Sprintf("/ws/parties/%s", code)
+
+	dialer := websocket.Dialer{Subprotocols: []string{socketProtocol, socketTokenPrefix + token}}
+	ws, resp, err := dialer.Dial(u.String(), nil)
+	if err != nil {
+		t.Fatalf("WebSocket with a subprotocol token failed: %v", err)
+	}
+	defer ws.Close()
+	if got := resp.Header.Get("Sec-WebSocket-Protocol"); got != socketProtocol {
+		t.Fatalf("expected the server to answer %q, got %q", socketProtocol, got)
+	}
+	var welcome map[string]interface{}
+	_ = ws.SetReadDeadline(time.Now().Add(2 * time.Second))
+	if err := ws.ReadJSON(&welcome); err != nil || welcome["type"] != protocol.FrameWelcome {
+		t.Fatalf("expected a welcome frame, got %v (%v)", welcome["type"], err)
+	}
+
+	bad := websocket.Dialer{Subprotocols: []string{socketProtocol, socketTokenPrefix + "nottherighttoken"}}
+	if _, resp, err := bad.Dial(u.String(), nil); err == nil || resp == nil || resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("expected 401 for a wrong subprotocol token, got %v", err)
 	}
 }
