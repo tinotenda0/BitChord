@@ -72,7 +72,11 @@ jobs:
       - name: Version
         id: version
         run: |
-          base=$(sed -n 's/.*?: "\([0-9][0-9.]*\)"$/\1/p' app/build.gradle.kts | head -n 1)
+          # The app's version lives in the root build file since upstream 1.8.1
+          # (extra["bitchordVersionName"] = "1.8.1"). An empty one must fail the
+          # build: published as "-20261027-...", the update check can't order it.
+          base=$(sed -n 's/^extra\["bitchordVersionName"\] = "\([0-9][0-9.]*\)"$/\1/p' build.gradle.kts | head -n 1)
+          [ -n "$base" ] || { echo "Couldn't read the app version from build.gradle.kts"; exit 1; }
           echo "value=${base}-$(date -u +%Y%m%d)-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
 
       - name: Build
