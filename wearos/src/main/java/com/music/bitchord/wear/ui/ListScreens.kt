@@ -42,7 +42,9 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import com.music.bitchord.wear.R
 import com.music.bitchord.wear.data.NowPlaying
+import com.music.bitchord.wear.data.ConnectDevice
 import com.music.bitchord.wear.data.PhoneOutput
+import com.music.bitchord.wear.WearProtocol
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.ui.platform.LocalContext
 import com.music.bitchord.wear.data.PhoneLink
@@ -306,6 +308,8 @@ fun OutputScreen(link: PhoneLink, onDone: () -> Unit) {
     LaunchedEffect(Unit) { link.requestOutputs() }
     val outputs by link.outputs.collectAsStateWithLifecycle()
     val onWatch by link.watchSpeaker.collectAsStateWithLifecycle()
+    val devices by link.devices.collectAsStateWithLifecycle()
+    val phonePlaying by link.phonePlaying.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val state = rememberScalingLazyListState(initialCenterItemIndex = 1)
     ScreenScaffold(scrollState = state) { padding ->
@@ -341,7 +345,7 @@ fun OutputScreen(link: PhoneLink, onDone: () -> Unit) {
                         },
                         label = outputLabel(output),
                         detail = stringResource(R.string.on_phone_output),
-                        selected = output.active && !onWatch,
+                        selected = output.active && !onWatch && phonePlaying,
                         onClick = {
                             link.playOnPhone(output)
                             onDone()
@@ -349,9 +353,38 @@ fun OutputScreen(link: PhoneLink, onDone: () -> Unit) {
                     )
                 }
             }
+            // Fork, Connect: the account's other devices, as the phone's picker lists them.
+            if (devices.isNotEmpty()) {
+                item(key = "devices") { Header(stringResource(R.string.other_devices)) }
+                items(devices, key = { "dev-${it.name}-${it.app}-${it.status}" }) { device ->
+                    OutputCell(
+                        icon = if (device.app == "web") R.drawable.ic_computer else R.drawable.ic_phone,
+                        label = device.name.ifBlank { stringResource(R.string.other_output) },
+                        detail = deviceDetail(device),
+                        selected = device.status == WearProtocol.DEVICE_PLAYING,
+                        onClick = {
+                            if (device.id.isNotBlank()) {
+                                link.playOnDevice(device)
+                                onDone()
+                            }
+                        },
+                    )
+                }
+            }
         }
     }
 }
+
+@Composable
+private fun deviceDetail(device: ConnectDevice): String = stringResource(
+    when (device.status) {
+        WearProtocol.DEVICE_PLAYING -> R.string.device_playing
+        WearProtocol.DEVICE_ASLEEP -> R.string.device_asleep
+        WearProtocol.DEVICE_IN_JAM -> R.string.device_in_jam
+        WearProtocol.DEVICE_UNREACHABLE -> R.string.device_unreachable
+        else -> R.string.device_online
+    },
+)
 
 @Composable
 private fun outputLabel(output: PhoneOutput): String = output.name.takeIf(String::isNotBlank) ?: stringResource(

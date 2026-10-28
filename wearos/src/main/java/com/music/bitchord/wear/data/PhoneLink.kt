@@ -76,6 +76,12 @@ class PhoneLink(context: Context, private val scope: CoroutineScope) :
     private val _outputs = MutableStateFlow<List<PhoneOutput>?>(null)
     val outputs: StateFlow<List<PhoneOutput>?> = _outputs.asStateFlow()
 
+    /** Fork, Connect: the account's other devices, and whether the phone is the one playing. */
+    private val _devices = MutableStateFlow<List<ConnectDevice>>(emptyList())
+    val devices: StateFlow<List<ConnectDevice>> = _devices.asStateFlow()
+    private val _phonePlaying = MutableStateFlow(true)
+    val phonePlaying: StateFlow<Boolean> = _phonePlaying.asStateFlow()
+
     /**
      * Whether this watch is the phone's speaker. The phone still owns the
      * queue and the state — everything on screen is still the phone's — and
@@ -217,8 +223,18 @@ class PhoneLink(context: Context, private val scope: CoroutineScope) :
     /** Play through one of the phone's outputs — the phone takes the music back if the watch had it. */
     fun playOnPhone(output: PhoneOutput) {
         _watchSpeaker.value = false
+        _phonePlaying.value = true
         _outputs.update { list -> list?.map { it.copy(active = it.id == output.id) } }
         send(P.CMD_SELECT_OUTPUT, output.id.toString())
+    }
+
+    /** Fork, Connect: move the music to another of the account's devices, waking it if need be. */
+    fun playOnDevice(device: ConnectDevice) {
+        if (device.id.isBlank()) return
+        _watchSpeaker.value = false
+        _phonePlaying.value = false
+        _outputs.update { list -> list?.map { it.copy(active = false) } }
+        send(P.CMD_SELECT_DEVICE, device.id)
     }
 
     /** Make this watch the phone's speaker. */
@@ -265,6 +281,16 @@ class PhoneLink(context: Context, private val scope: CoroutineScope) :
 
     private fun applyOutputs(map: DataMap) {
         _watchSpeaker.value = map.getBoolean(P.KEY_WATCH_SPEAKER)
+        // A phone from before Connect on the watch sends neither: it is the one playing.
+        _phonePlaying.value = map.getBoolean(P.KEY_PHONE_PLAYING, true)
+        _devices.value = map.getDataMapArrayList(P.KEY_DEVICES).orEmpty().map {
+            ConnectDevice(
+                id = it.getString(P.KEY_DEVICE_ID).orEmpty(),
+                name = it.getString(P.KEY_DEVICE_NAME).orEmpty(),
+                app = it.getString(P.KEY_DEVICE_APP).orEmpty(),
+                status = it.getString(P.KEY_DEVICE_STATUS).orEmpty(),
+            )
+        }
         _outputs.value = map.getDataMapArrayList(P.KEY_OUTPUTS).orEmpty().map {
             PhoneOutput(
                 id = it.getInt(P.KEY_OUTPUT_ID),

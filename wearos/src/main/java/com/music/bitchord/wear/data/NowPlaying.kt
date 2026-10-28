@@ -97,3 +97,11 @@ enum class Link {
 /** One of the phone's outputs, as its player lists them. */
 @Immutable
 data class PhoneOutput(val id: Int, val name: String, val kind: String, val active: Boolean)
+
+/**
+ * Fork, Connect: another of the account's devices, as the phone's device picker
+ * lists it. [id] is what to send back to move the music there; blank when tapping
+ * it can do nothing (it is playing already, or asleep with no way to wake it).
+ */
+@Immutable
+data class ConnectDevice(val id: String, val name: String, val app: String, val status: String)

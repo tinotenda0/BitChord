@@ -37,6 +37,12 @@
     <string name="hdmi">HDMI</string>
     <string name="other_output">Other output</string>
     <string name="moving_to_watch">Moving to watch…</string>
+    <string name="other_devices">Other devices</string>
+    <string name="device_playing">Playing</string>
+    <string name="device_online">Connect</string>
+    <string name="device_asleep">Asleep · tap to wake</string>
+    <string name="device_in_jam">In a jam</string>
+    <string name="device_unreachable">Can\'t be woken</string>
     <string name="update_channel">Updates</string>
     <string name="update_ready">BitChord update ready</string>
     <string name="update_tap">Tap to install the update from your phone.</string>

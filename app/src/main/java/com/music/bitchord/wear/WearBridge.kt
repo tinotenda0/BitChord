@@ -27,6 +27,8 @@ import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.Node
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import com.google.android.gms.wearable.WearableListenerService
@@ -165,6 +167,33 @@ object WearBridge {
     internal fun onWatchSeen(context: Context) {
         watchReachable = true
         ensureListening(context.applicationContext)
+        followConnect(context.applicationContext)
+    }
+
+    @Volatile private var followingConnect = false
+
+    /**
+     * Fork, Connect: the watch's output list names the account's other devices,
+     * so it is sent again whenever they or the device playing change — a tablet
+     * coming online, playback moving — not only when the watch asks.
+     */
+    private fun followConnect(app: Context) {
+        if (followingConnect) return
+        followingConnect = true
+        scope.launch {
+            com.music.bitchord.data.listentogether.ListenTogether.state
+                .map { party ->
+                    if (!party.isConnect) {
+                        emptyList<String>()
+                    } else {
+                        listOf(party.output?.memberId.orEmpty(), party.isRemote.toString()) +
+                            party.members.map { "${it.memberId}:${it.connected}" } +
+                            party.devices.map { "${it.deviceId}:${it.connected}:${it.status}" }
+                    }
+                }
+                .distinctUntilChanged()
+                .collect { publishOutputs(app) }
+        }
     }
 
     /**
@@ -360,10 +389,61 @@ object WearBridge {
                 },
             )
             putBoolean(P.KEY_WATCH_SPEAKER, speaker?.active == true)
+            val party = com.music.bitchord.data.listentogether.ListenTogether.state.value
+            putBoolean(P.KEY_PHONE_PLAYING, !(party.isConnect && party.isRemote))
+            putDataMapArrayList(P.KEY_DEVICES, connectDevices(party))
             putLong(P.KEY_POSITION_AT, System.currentTimeMillis())
         }
         // Read here, on the caller's thread, but handed over off the main one.
         scope.launch { put(app, request) }
+    }
+
+    /**
+     * Fork, Connect: the account's other devices for the watch's output list, as
+     * the phone's own device picker lists them (ConnectDevicesSheet): members are
+     * online, the rest of what the server remembers asleep, and one that is both
+     * is listed once. This phone is left out; its outputs stand for it.
+     */
+    private fun connectDevices(
+        party: com.music.bitchord.data.listentogether.ListenTogether.State,
+    ): ArrayList<DataMap> {
+        val out = ArrayList<DataMap>()
+        if (!party.isConnect) return out
+        val you = party.you
+        val outputId = party.output?.memberId
+        fun row(id: String, name: String, app: String, status: String) = DataMap().apply {
+            putString(P.KEY_DEVICE_ID, id)
+            putString(P.KEY_DEVICE_NAME, name)
+            putString(P.KEY_DEVICE_APP, app)
+            putString(P.KEY_DEVICE_STATUS, status)
+        }
+        for (member in party.members) {
+            if (member.memberId == you?.memberId) continue
+            val known = party.devices.firstOrNull { it.deviceKey == member.deviceKey && it.app == member.app }
+            val name = member.deviceName.ifBlank { member.displayName }
+            out += when {
+                member.memberId == outputId -> row("", name, member.app, P.DEVICE_PLAYING)
+                member.connected -> row("m:${member.memberId}", name, member.app, P.DEVICE_ONLINE)
+                else -> sleepingRow(known, name, member.app, ::row)
+            }
+        }
+        party.devices
+            .filter { known -> party.members.none { it.deviceKey == known.deviceKey && it.app == known.app } }
+            .filterNot { it.deviceKey == you?.deviceKey && it.app == you?.app }
+            .forEach { out += sleepingRow(it, it.deviceName, it.app, ::row) }
+        return out
+    }
+
+    private fun sleepingRow(
+        known: com.music.bitchord.data.listentogether.ConnectDevice?,
+        name: String,
+        app: String,
+        row: (String, String, String, String) -> DataMap,
+    ): DataMap = when {
+        // Busy in a jam: waking it would drag it out of that, which is its owner's call.
+        known?.status == "jam" -> row("", name, app, P.DEVICE_IN_JAM)
+        known != null && known.wakeable -> row("w:${known.deviceId}", name, app, P.DEVICE_ASLEEP)
+        else -> row("", name, app, P.DEVICE_UNREACHABLE)
     }
 
     private val streamPool = Executors.newCachedThreadPool()
@@ -638,6 +718,27 @@ class WearCommandService : WearableListenerService() {
                     AudioRouting.select(arg.toIntOrNull())
                     // A phone output picked while the watch plays brings the music back here.
                     WearBridge.speaker?.stop(resumeHere = true)
+                    // Fork, Connect: and while another device plays, it brings the
+                    // music to this phone, as "play here" does.
+                    val party = com.music.bitchord.data.listentogether.ListenTogether.state.value
+                    val me = party.you?.memberId
+                    if (party.isConnect && party.isRemote && me != null) {
+                        com.music.bitchord.data.listentogether.ListenTogether.transfer(me)
+                    }
+                    WearBridge.publishOutputs(this)
+                }
+                return
+            }
+            P.CMD_SELECT_DEVICE -> {
+                main.post {
+                    val lt = com.music.bitchord.data.listentogether.ListenTogether
+                    when {
+                        arg.startsWith("m:") -> lt.transfer(arg.removePrefix("m:"))
+                        arg.startsWith("w:") -> lt.wake(arg.removePrefix("w:"))
+                        else -> return@post
+                    }
+                    // The music is going to another device, not back to this phone.
+                    WearBridge.speaker?.stop(resumeHere = false)
                     WearBridge.publishOutputs(this)
                 }
                 return

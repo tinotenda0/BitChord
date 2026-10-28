@@ -123,6 +123,12 @@ object WearProtocol {
     const val CMD_SELECT_OUTPUT = "select_output"
 
     /**
+     * Fork, Connect: payload a [KEY_DEVICE_ID] from [PATH_OUTPUTS]. Moves playback to
+     * another of the account's devices, waking it first if it is asleep.
+     */
+    const val CMD_SELECT_DEVICE = "select_device"
+
+    /**
      * Make the watch the speaker. Like casting: the phone keeps its queue,
      * paused, and drives the watch's player with [PATH_SPEAKER] messages. A
      * phone output picked with [CMD_SELECT_OUTPUT] ends it.
@@ -191,6 +197,35 @@ object WearProtocol {
 
     /** On [PATH_NOW_PLAYING] and [PATH_OUTPUTS]: the watch is the speaker. */
     const val KEY_WATCH_SPEAKER = "watch_speaker"
+
+    // ---- Fork, Connect: the account's other devices, on PATH_OUTPUTS ----
+
+    /**
+     * DataMap list: [KEY_DEVICE_ID], [KEY_DEVICE_NAME], [KEY_DEVICE_APP],
+     * [KEY_DEVICE_STATUS]. The phone itself is not in it: its outputs are.
+     */
+    const val KEY_DEVICES = "devices"
+
+    /** What to send back in [CMD_SELECT_DEVICE]; blank when tapping it can do nothing. */
+    const val KEY_DEVICE_ID = "device_id"
+    const val KEY_DEVICE_NAME = "device_name"
+
+    /** "prod", "dev" or "web". */
+    const val KEY_DEVICE_APP = "device_app"
+
+    /** [DEVICE_PLAYING], [DEVICE_ONLINE], [DEVICE_ASLEEP], [DEVICE_IN_JAM] or [DEVICE_UNREACHABLE]. */
+    const val KEY_DEVICE_STATUS = "device_status"
+    const val DEVICE_PLAYING = "playing"
+    const val DEVICE_ONLINE = "online"
+    const val DEVICE_ASLEEP = "asleep"
+    const val DEVICE_IN_JAM = "jam"
+    const val DEVICE_UNREACHABLE = "unreachable"
+
+    /**
+     * Whether the music is coming out of the phone (or the watch through it), rather
+     * than another Connect device, so its outputs are the ones in use.
+     */
+    const val KEY_PHONE_PLAYING = "phone_playing"
 
     /** DataMap list: [KEY_MEDIA_ID], [KEY_TITLE], [KEY_ARTIST], [KEY_URI]. */
     const val KEY_TRACKS = "tracks"
