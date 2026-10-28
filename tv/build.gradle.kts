@@ -325,6 +325,14 @@ dependencies {
     // ---- Media playback: Media3 / ExoPlayer ----
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-session:1.11.0")
+    // Fork: the phone sources TV builds from include Connect's wake-up push
+    // (ConnectPushService), so the connector has to be on the classpath, with
+    // the one Android Tink as in app/build.gradle.kts. TV registers no push
+    // service, so a TV is never woken; it only joins Connect while open.
+    implementation("org.unifiedpush.android:connector:3.3.5") {
+        exclude(group = "com.google.crypto.tink", module = "tink")
+    }
+    implementation("com.google.crypto.tink:tink-android:1.23.0")
     implementation("androidx.media3:media3-common:1.11.0")
     implementation("androidx.media3:media3-datasource-okhttp:1.11.0")
     // Audio is progressive, but Apple serves its motion artwork as HLS — this
