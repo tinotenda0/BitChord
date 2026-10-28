@@ -83,7 +83,9 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 27
-        versionName = "1.8.1"
+        // Fork: CI stamps the version a build is published under, as for the phone app,
+        // so the update check can tell which release it is.
+        versionName = providers.gradleProperty("bitchord.version").orNull ?: "1.8.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -100,6 +102,8 @@ android {
         // the updater installs the TV app here, never the phone app. See
         // AppUpdateChecker.apkAssetUrl.
         buildConfigField("String", "UPDATE_APK_PREFIX", "\"BitChordTV-\"")
+        // Fork: the TV app's own releases on the family releases page, not the phone's.
+        buildConfigField("String", "RELEASE_APP", "\"bitchord-tv\"")
     }
 
     splits {

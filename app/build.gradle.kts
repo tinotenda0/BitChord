@@ -87,6 +87,8 @@ android {
         // the same GitHub release, told apart by file name. See
         // AppUpdateChecker.apkAssetUrl.
         buildConfigField("String", "UPDATE_APK_PREFIX", "\"BitChord-\"")
+        // Fork: which app on the family releases page this one updates from.
+        buildConfigField("String", "RELEASE_APP", "\"bitchord\"")
     }
 
     splits {

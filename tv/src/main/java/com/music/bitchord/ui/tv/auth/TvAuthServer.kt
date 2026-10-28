@@ -49,6 +49,14 @@ object TvAuthServer {
     var onPlaySongAction: ((Song) -> Unit)? = null
     var onKeyAction: ((String) -> Unit)? = null
 
+    /**
+     * Fork: signing this TV in to the Marble gateway from a phone, at /gateway.
+     * Given the username and password typed there; answers null when they were
+     * accepted, or what to tell the phone when not. Called off the main thread,
+     * and may block until the gateway has answered.
+     */
+    @Volatile var onGatewayLogin: ((String, String) -> String?)? = null
+
     fun getLocalIpAddress(): String? {
         try {
             val interfaces = NetworkInterface.getNetworkInterfaces() ?: return null
@@ -241,6 +249,21 @@ object TvAuthServer {
                     }
 
                     // 6. Mobile Web Remote Control Page (/remote)
+                    // Fork: the Marble gateway sign-in, typed on the phone.
+                    path == "/gateway" && method == "POST" -> {
+                        val form = parseForm(requestBody)
+                        val user = form["username"].orEmpty().trim()
+                        val pass = form["password"].orEmpty()
+                        val problem = when {
+                            user.isEmpty() || pass.isEmpty() -> "Enter your username and password."
+                            else -> onGatewayLogin?.invoke(user, pass) ?: null
+                        }
+                        sendHtmlResponse(
+                            writer,
+                            if (problem == null && onGatewayLogin != null) gatewayDoneHtml(user) else gatewayHtml(problem ?: "Sign-in isn't open on the TV any more."),
+                        )
+                    }
+                    path == "/gateway" -> sendHtmlResponse(writer, gatewayHtml(null))
                     path == "/remote" -> {
                         sendHtmlResponse(writer, getRemoteControlHtml())
                     }
@@ -464,6 +487,59 @@ updateStatus();
 </body>
 </html>
 """.trimIndent()
+
+    /** An `application/x-www-form-urlencoded` body as a map. */
+    private fun parseForm(body: String): Map<String, String> = body.split("&").mapNotNull { pair ->
+        val key = pair.substringBefore("=", "")
+        if (key.isEmpty()) return@mapNotNull null
+        val value = pair.substringAfter("=", "")
+        runCatching { URLDecoder.decode(key, "UTF-8") to URLDecoder.decode(value, "UTF-8") }.getOrNull()
+    }.toMap()
+
+    private fun escapeHtml(text: String): String =
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
+
+    private val gatewayStyle = """
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; background: #000; color: #fff; margin: 0;
+         min-height: 100vh; display: grid; place-items: center; }
+  .card { width: min(92vw, 360px); background: #161616; border-radius: 18px; padding: 24px; box-sizing: border-box; }
+  h1 { font-size: 20px; margin: 0 0 6px; }
+  p { color: #aaa; font-size: 14px; line-height: 1.45; margin: 0 0 18px; }
+  label { display: block; font-size: 12px; color: #aaa; margin: 0 0 6px; }
+  input { width: 100%; box-sizing: border-box; background: #262626; border: 0; border-radius: 10px;
+          color: #fff; font-size: 16px; padding: 12px; margin: 0 0 14px; }
+  button { width: 100%; border: 0; border-radius: 999px; padding: 13px; font-size: 15px; font-weight: 600;
+           background: #fff; color: #000; }
+  .error { color: #ff6b6b; }
+</style>
+"""
+
+    private fun gatewayHtml(error: String?): String = """
+<!DOCTYPE html>
+<html lang="en"><head>$gatewayStyle<title>Sign the TV in to Marble</title></head>
+<body><form class="card" method="POST" action="/gateway">
+  <h1>Sign the TV in to Marble</h1>
+  <p>Your Marble Music account: the TV joins your devices for Connect, and what it plays counts in your stats.</p>
+  ${if (error != null) "<p class=\"error\">${escapeHtml(error)}</p>" else ""}
+  <label for="u">Username</label>
+  <input id="u" name="username" autocomplete="username" autocapitalize="none" autocorrect="off">
+  <label for="p">Password</label>
+  <input id="p" name="password" type="password" autocomplete="current-password">
+  <button type="submit">Sign in</button>
+</form></body></html>
+"""
+
+    private fun gatewayDoneHtml(user: String): String = """
+<!DOCTYPE html>
+<html lang="en"><head>$gatewayStyle<title>Signed in</title></head>
+<body><div class="card">
+  <h1>The TV is signed in</h1>
+  <p>Signed in as ${escapeHtml(user)}. You can close this page.</p>
+</div></body></html>
+"""
 
     private fun getAuthHtml(error: String? = null): String = """
 <!DOCTYPE html>

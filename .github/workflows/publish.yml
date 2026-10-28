@@ -7,7 +7,8 @@
 #
 # Each run also builds the Wear OS app of the same channel and publishes it under
 # app=bitchord-wear: a watch only pairs with a phone app of the same package
-# signed with the same key, so it has to come from here too.
+# signed with the same key, so it has to come from here too. And the Android TV
+# app, published under app=bitchord-tv, which its update check follows.
 #
 # Both are release builds (R8-shrunk, which is also what keeps the APK under the
 # 100MB upload limit the API sits behind), signed with the family key from the
@@ -86,7 +87,7 @@ jobs:
       - name: Build
         run: |
           task=$([ "${{ inputs.channel }}" = prod ] && echo assembleProdRelease || echo assembleDevRelease)
-          ./gradlew ":app:$task" ":wearos:$task" "-Pbitchord.version=${{ steps.version.outputs.value }}" --console=plain
+          ./gradlew ":app:$task" ":wearos:$task" ":tv:$task" "-Pbitchord.version=${{ steps.version.outputs.value }}" --console=plain
 
       - name: Verify the APK is signed and fits the upload limit
         id: apk
@@ -105,6 +106,12 @@ jobs:
           WEAR="wearos/build/outputs/apk/${flavor}/release/BitChordWear-${flavor}-release.apk"
           "$BUILD_TOOLS/apksigner" verify "$WEAR"
           echo "wear=$WEAR" >> "$GITHUB_OUTPUT"
+          TV=$(ls tv/build/outputs/apk/${flavor}/release/*universal*.apk | head -n 1)
+          "$BUILD_TOOLS/apksigner" verify "$TV"
+          TV_MB=$(( $(stat -c%s "$TV") / 1048576 ))
+          echo "TV APK is ${TV_MB}MB"
+          [ "$TV_MB" -lt 100 ] || { echo "::error::TV APK is ${TV_MB}MB, over the 100MB upload limit."; exit 1; }
+          echo "tv=$TV" >> "$GITHUB_OUTPUT"
 
       - name: Publish to the releases page
         env:
@@ -123,3 +130,9 @@ jobs:
           NOTES: ${{ inputs.notes }}
         run: |
           curl --fail-with-body             -F "apk=@${{ steps.apk.outputs.wear }}"             -F "version=${{ steps.version.outputs.value }}"             -F "notes=${NOTES}"             -F "notify=false"             -H "Authorization: Bearer ${{ secrets.XPS_RELEASE_TOKEN }}"             "https://api.tinotenda.co/api/v1/releases/bitchord-wear/${{ inputs.channel }}/publish"
+
+      - name: Publish the TV app
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: |
+          curl --fail-with-body             -F "apk=@${{ steps.apk.outputs.tv }}"             -F "version=${{ steps.version.outputs.value }}"             -F "notes=${NOTES}"             -F "notify=false"             -H "Authorization: Bearer ${{ secrets.XPS_RELEASE_TOKEN }}"             "https://api.tinotenda.co/api/v1/releases/bitchord-tv/${{ inputs.channel }}/publish"

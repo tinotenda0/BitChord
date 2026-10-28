@@ -38,6 +38,7 @@ import com.music.bitchord.ui.tv.components.TvListHeader
 import com.music.bitchord.ui.tv.components.TvListRow
 import com.music.bitchord.ui.tv.dialogs.TvAboutDialog
 import com.music.bitchord.ui.tv.dialogs.TvEqualizerDialog
+import com.music.bitchord.ui.tv.dialogs.TvGatewayDialog
 import com.music.bitchord.ui.tv.dialogs.TvLyricsSourcesDialog
 import com.music.bitchord.ui.tv.dialogs.TvRefreshRateDialog
 import com.music.bitchord.ui.tv.dialogs.TvScrobbleDialog
@@ -50,7 +51,7 @@ import com.music.bitchord.ui.tv.theme.TvGlass
 import com.music.bitchord.ui.tv.theme.TvType
 
 // Discord Rich Presence is hidden on TV for now; TvDiscordDialog is kept for when it returns.
-private enum class SettingsSheet { Theme, RefreshRate, Equalizer, Scrobbling, LyricsSources, Update, About }
+private enum class SettingsSheet { Theme, RefreshRate, Equalizer, Scrobbling, LyricsSources, Update, About, Marble }
 
 private const val DefaultBlurb = "Playback, sound and display preferences for BitChord on this TV."
 
@@ -69,6 +70,7 @@ fun TvSettingsScreen(
     TvChromePinned()
     val signedIn by viewModel.signedIn.collectAsState()
     val account by viewModel.account.collectAsState()
+    val marbleUser by com.music.bitchord.gateway.Gateway.username.collectAsState()
 
     val automix by AppSettings.smartFadeEnabled.collectAsState()
     val crossfade by AppSettings.crossfadeSeconds.collectAsState()
@@ -137,6 +139,17 @@ fun TvSettingsScreen(
                     value = if (signedIn) account?.name ?: "Signed In" else "Sign In",
                     onFocused = { blurb = "Your library, playlists and recommendations come from this account." },
                     onClick = onOpenAccount,
+                )
+            }
+            // Fork: the Marble gateway account, for Connect and stats.
+            item {
+                TvListRow(
+                    title = "Marble Account",
+                    value = marbleUser.ifEmpty { "Sign In" },
+                    onFocused = {
+                        blurb = "Joins this TV to your devices, so you can play to it from your phone, and counts what it plays in your stats."
+                    },
+                    onClick = { sheet = SettingsSheet.Marble },
                 )
             }
 
@@ -354,6 +367,7 @@ fun TvSettingsScreen(
         SettingsSheet.LyricsSources -> TvLyricsSourcesDialog(onDismiss = { sheet = null })
         SettingsSheet.Update -> update?.let { TvUpdateDialog(update = it, onDismiss = { sheet = null }) }
         SettingsSheet.About -> TvAboutDialog(onDismiss = { sheet = null })
+        SettingsSheet.Marble -> TvGatewayDialog(onDismiss = { sheet = null })
         null -> Unit
     }
 }

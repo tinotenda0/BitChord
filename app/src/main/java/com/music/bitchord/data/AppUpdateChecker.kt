@@ -47,10 +47,11 @@ object AppUpdateChecker {
      * Fork: the family releases page rather than upstream's GitHub releases. Upstream's APKs
      * are signed with upstream's key and can't install over this fork, so offering them would
      * only ever fail. Each flavour follows its own channel: "BitChord Dev" the dev builds,
-     * BitChord the stable ones.
+     * BitChord the stable ones. The TV app has releases of its own ([BuildConfig.RELEASE_APP]),
+     * so a TV is never offered the phone APK.
      */
     private val LATEST_RELEASE_URL =
-        "https://api.tinotenda.co/api/v1/releases/bitchord/${if (BuildConfig.FLAVOR == "dev") "dev" else "prod"}/latest"
+        "https://api.tinotenda.co/api/v1/releases/${BuildConfig.RELEASE_APP}/${if (BuildConfig.FLAVOR == "dev") "dev" else "prod"}/latest"
 
     private val json = Json { ignoreUnknownKeys = true }
 
