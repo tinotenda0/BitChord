@@ -5,6 +5,10 @@
 #   dev  -> "BitChord Dev" (com.dev.bitchord), installs beside the stable app
 #   prod -> "BitChord" (com.music.bitchord)
 #
+# Each run also builds the Wear OS app of the same channel and publishes it under
+# app=bitchord-wear: a watch only pairs with a phone app of the same package
+# signed with the same key, so it has to come from here too.
+#
 # Both are release builds (R8-shrunk, which is also what keeps the APK under the
 # 100MB upload limit the API sits behind), signed with the family key from the
 # KEYSTORE_* secrets so every build installs over the one before it.
@@ -82,7 +86,7 @@ jobs:
       - name: Build
         run: |
           task=$([ "${{ inputs.channel }}" = prod ] && echo assembleProdRelease || echo assembleDevRelease)
-          ./gradlew ":app:$task" "-Pbitchord.version=${{ steps.version.outputs.value }}" --console=plain
+          ./gradlew ":app:$task" ":wearos:$task" "-Pbitchord.version=${{ steps.version.outputs.value }}" --console=plain
 
       - name: Verify the APK is signed and fits the upload limit
         id: apk
@@ -98,6 +102,9 @@ jobs:
             exit 1
           fi
           echo "path=$APK" >> "$GITHUB_OUTPUT"
+          WEAR="wearos/build/outputs/apk/${flavor}/release/BitChordWear-${flavor}-release.apk"
+          "$BUILD_TOOLS/apksigner" verify "$WEAR"
+          echo "wear=$WEAR" >> "$GITHUB_OUTPUT"
 
       - name: Publish to the releases page
         env:
@@ -110,3 +117,9 @@ jobs:
             -F "notify=${{ inputs.notify }}" \
             -H "Authorization: Bearer ${{ secrets.XPS_RELEASE_TOKEN }}" \
             "https://api.tinotenda.co/api/v1/releases/bitchord/${{ inputs.channel }}/publish"
+
+      - name: Publish the watch app
+        env:
+          NOTES: ${{ inputs.notes }}
+        run: |
+          curl --fail-with-body             -F "apk=@${{ steps.apk.outputs.wear }}"             -F "version=${{ steps.version.outputs.value }}"             -F "notes=${NOTES}"             -F "notify=false"             -H "Authorization: Bearer ${{ secrets.XPS_RELEASE_TOKEN }}"             "https://api.tinotenda.co/api/v1/releases/bitchord-wear/${{ inputs.channel }}/publish"
