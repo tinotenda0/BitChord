@@ -87,7 +87,10 @@ jobs:
       - name: Build
         run: |
           task=$([ "${{ inputs.channel }}" = prod ] && echo assembleProdRelease || echo assembleDevRelease)
-          ./gradlew ":app:$task" ":wearos:$task" ":tv:$task" "-Pbitchord.version=${{ steps.version.outputs.value }}" --console=plain
+          ./gradlew ":app:$task" ":wearos:$task" "-Pbitchord.version=${{ steps.version.outputs.value }}" --console=plain
+          # The TV app on its own afterwards: three release builds shrinking at once
+          # ran the runner short, and a prod build failed packaging the phone APK.
+          ./gradlew ":tv:$task" "-Pbitchord.version=${{ steps.version.outputs.value }}" --console=plain
 
       - name: Verify the APK is signed and fits the upload limit
         id: apk
