@@ -106,7 +106,10 @@ jobs:
           WEAR="wearos/build/outputs/apk/${flavor}/release/BitChordWear-${flavor}-release.apk"
           "$BUILD_TOOLS/apksigner" verify "$WEAR"
           echo "wear=$WEAR" >> "$GITHUB_OUTPUT"
-          TV=$(ls tv/build/outputs/apk/${flavor}/release/*universal*.apk | head -n 1)
+          # The 32-bit ARM build: the universal one carries three ABIs and is ~150MB,
+          # over the upload limit, and armeabi-v7a runs on nearly every Android TV,
+          # 64-bit ones included, since TVs keep 32-bit support.
+          TV=$(ls tv/build/outputs/apk/${flavor}/release/*armeabi-v7a*.apk | head -n 1)
           "$BUILD_TOOLS/apksigner" verify "$TV"
           TV_MB=$(( $(stat -c%s "$TV") / 1048576 ))
           echo "TV APK is ${TV_MB}MB"
