@@ -49,7 +49,8 @@ val lastfmSecret: String = (
 val listenTogetherServer: String = (
     localProps.getProperty("LISTEN_TOGETHER_SERVER")
         ?: System.getenv("LISTEN_TOGETHER_SERVER")
-        ?: "https://bitchord-listen-together.onrender.com"
+        // Fork: marble's party server, as the phone build has; upstream's knows none of our devices.
+        ?: "https://jam.tinotenda.co"
     ).trim().trimEnd('/')
 
 /*
