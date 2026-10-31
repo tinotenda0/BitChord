@@ -729,19 +729,6 @@
                 android:resource="@xml/widget_media_pill" />
         </receiver>
 
-        <!-- Fork: the Surprise Me widget. Its button is its own PendingIntent, as above. -->
-        <receiver
-            android:name=".gateway.SurpriseMeWidget"
-            android:exported="false"
-            android:label="@string/surprise_me">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_surprise_me" />
-        </receiver>
-
         <!-- Fork: the listening stats widget. Opens the app; nothing else reaches it. -->
         <receiver
             android:name=".gateway.ListeningStatsWidget"

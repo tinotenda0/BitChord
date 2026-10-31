@@ -248,7 +248,9 @@ fun HomeScreen(
                     // Recently Played lands, every real shelf must retain its
                     // compact-card layout instead of briefly becoming a hero.
                     itemsIndexedShelves(
-                        shelves = state.data,
+                        // Fork: music-video shelves are left out. The household
+                        // listens; a row of videos is a row of things to skip.
+                        shelves = state.data.filterNot { it.layout == ShelfLayout.VIDEO },
                         onMoodClick = onMoodClick,
                         onMoodsShowAll = onMoodsShowAll,
                         onItemClick = onItemClick,
