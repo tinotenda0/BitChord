@@ -250,7 +250,7 @@ fun HomeScreen(
                     itemsIndexedShelves(
                         // Fork: music-video shelves are left out. The household
                         // listens; a row of videos is a row of things to skip.
-                        shelves = state.data.filterNot { it.layout == ShelfLayout.VIDEO },
+                        shelves = state.data.filterNot(::isVideoShelf),
                         onMoodClick = onMoodClick,
                         onMoodsShowAll = onMoodsShowAll,
                         onItemClick = onItemClick,
@@ -1152,4 +1152,19 @@ internal fun ShelfCard(
             overflow = TextOverflow.Ellipsis,
         )
     }
+}
+
+/**
+ * Fork: a shelf that is mostly music videos, however YouTube lays it out: the
+ * widescreen video shelves, list shelves of videos like Explore's Trending, and
+ * Trending and Shorts by name, which are videos even when an item says otherwise.
+ */
+internal fun isVideoShelf(shelf: HomeShelf): Boolean {
+    if (shelf.layout == ShelfLayout.VIDEO) return true
+    if (shelf.items.isNotEmpty() && shelf.items.count { it.isVideo } * 2 > shelf.items.size) return true
+    val title = shelf.title.trim()
+    return title.startsWith("Shorts", ignoreCase = true) ||
+        title.equals("Trending", ignoreCase = true) ||
+        title.equals("Thịnh hành", ignoreCase = true) ||
+        title.equals("急上昇", ignoreCase = true)
 }
