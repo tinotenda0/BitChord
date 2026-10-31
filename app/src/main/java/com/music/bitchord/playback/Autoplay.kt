@@ -121,8 +121,10 @@ suspend fun loadAutoplayTracks(
             ?.let { return Result.success(it) }
     }
     val seed = youtubeSeedFor(seedSong) ?: return Result.success(emptyList())
-    val related = YtMusicRepository.radio(seed).getOrElse { return Result.failure(it) }
-    val extra = QueueBuilder.extend(existing, related, limit)
+    // A music video plays on with music videos, as YouTube Music does.
+    val videos = seedSong.isVideo && seed == seedSong.videoId
+    val related = YtMusicRepository.radio(seed, preferVideo = videos).getOrElse { return Result.failure(it) }
+    val extra = QueueBuilder.extend(existing, related, limit, preferVideos = videos)
     if (extra.isEmpty()) return Result.success(emptyList())
 
     return Result.success(extra.map {
