@@ -297,6 +297,12 @@ dependencies {
     // ---- Media playback: Media3 / ExoPlayer ----
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-session:1.11.0")
+    // Fork: Android Auto's templated screens (Car App Library, CAL API 8 for
+    // MediaPlaybackTemplate). See car/BitChordCarAppService.
+    implementation("androidx.car.app:app:1.8.0-rc01")
+    implementation("androidx.car.app:app-projected:1.8.0-rc01")
+    // MediaSessionCompat.Token, which the Car App Library takes for the session.
+    implementation("androidx.media:media:1.7.0")
     // ---- Connect: waking a sleeping device (UnifiedPush, delivered by ntfy) ----
     // It decrypts WebPush with Tink, as does security-crypto with tink-android:
     // two builds of one library, the same classes in each. So one Tink only,

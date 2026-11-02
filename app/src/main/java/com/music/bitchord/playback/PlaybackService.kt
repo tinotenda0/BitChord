@@ -1922,6 +1922,8 @@ class PlaybackService : MediaLibraryService() {
         refreshCustomLayouts()
         followRemoteRole()
         followJamForAuto()
+        // Fork: the car's templated screens register the session with Android Auto.
+        com.music.bitchord.car.CarPlayback.platformToken = mediaSession?.platformToken
 
         // Last, so a receiver that outlived the app is adopted by a service
         // whose queue is already restored.

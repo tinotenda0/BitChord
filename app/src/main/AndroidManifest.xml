@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Fork: Android Auto's templated media screens. -->
+    <uses-permission android:name="androidx.car.app.MEDIA_TEMPLATES" />
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Tells Wi-Fi from mobile data, so the matching quality ceiling applies. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -107,6 +109,21 @@
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
+
+        <!-- Fork: MediaPlaybackTemplate needs Car App API level 8. -->
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="8" />
+
+        <!-- Fork: BitChord's Android Auto screens, on the Car App Library templates. -->
+        <service
+            android:name=".car.BitChordCarAppService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.MEDIA" />
+            </intent-filter>
+        </service>
 
         <!--
           No android:screenOrientation here, deliberately: the app follows the

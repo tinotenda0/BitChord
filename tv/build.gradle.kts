@@ -332,6 +332,10 @@ dependencies {
     // ---- Media playback: Media3 / ExoPlayer ----
     implementation("androidx.media3:media3-exoplayer:1.11.0")
     implementation("androidx.media3:media3-session:1.11.0")
+    // Fork: the phone sources TV builds from include the Android Auto car screens.
+    implementation("androidx.car.app:app:1.8.0-rc01")
+    implementation("androidx.car.app:app-projected:1.8.0-rc01")
+    implementation("androidx.media:media:1.7.0")
     // Fork: the phone sources TV builds from include Connect's wake-up push
     // (ConnectPushService), so the connector has to be on the classpath, with
     // the one Android Tink as in app/build.gradle.kts. TV registers no push

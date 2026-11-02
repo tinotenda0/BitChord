@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <automotiveApp>
     <uses name="media" />
+    <!-- Fork: the Car App Library's templated media screens (car/BitChordCarAppService). -->
+    <uses name="template" />
 </automotiveApp>
