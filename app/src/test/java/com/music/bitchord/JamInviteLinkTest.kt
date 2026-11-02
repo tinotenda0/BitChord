@@ -48,10 +48,19 @@ class JamInviteLinkTest {
 
     @Test
     fun `builds the canonical share URL`() {
+        // Fork: a Marble Music link, which the app claims and the web app joins.
         assertEquals(
-            "https://bitchord.kushagrasingh.in/invite/ABC123",
+            "https://music.tinotenda.co/jam/ABC123",
             JamInviteLink.url("abc123"),
         )
+    }
+
+    @Test
+    fun `reads a Marble Music invite`() {
+        assertEquals("ABC123", JamInviteLink.parse("https://music.tinotenda.co/jam/abc123"))
+        assertEquals("ABC123", JamInviteLink.parse("https://music.tinotenda.co/jam/ABC123/"))
+        assertNull(JamInviteLink.parse("https://music.tinotenda.co/jam/TOO-LONG"))
+        assertNull(JamInviteLink.parse("https://music.tinotenda.co/search?q=jam"))
     }
 
     @Test
@@ -65,11 +74,11 @@ class JamInviteLinkTest {
             JamInviteLink.url("abc123", "https://my-party.onrender.com/"),
         )
         assertEquals(
-            "https://bitchord.kushagrasingh.in/invite/ABC123",
+            "https://music.tinotenda.co/jam/ABC123",
             JamInviteLink.url("abc123", ""),
         )
         assertEquals(
-            "https://bitchord.kushagrasingh.in/invite/ABC123",
+            "https://music.tinotenda.co/jam/ABC123",
             JamInviteLink.url("abc123", null),
         )
     }
@@ -135,7 +144,7 @@ class JamInviteLinkTest {
         } else {
             JamInviteLink.url(code, activePartyHost)
         }
-        assertEquals("https://bitchord.kushagrasingh.in/invite/JAM001", link)
+        assertEquals("https://music.tinotenda.co/jam/JAM001", link)
     }
 
     @Test

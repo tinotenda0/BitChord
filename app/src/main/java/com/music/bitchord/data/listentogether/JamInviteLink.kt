@@ -18,6 +18,14 @@ object JamInviteLink {
 
     const val ORIGIN = "https://bitchord.kushagrasingh.in"
 
+    /**
+     * Fork: invites are Marble Music links. The web app joins the jam in a browser
+     * (as a guest, for somebody without an account); the app claims the address,
+     * so where BitChord is installed it opens there instead.
+     */
+    const val MARBLE_ORIGIN = "https://music.tinotenda.co"
+    private const val MARBLE_HOST = "music.tinotenda.co"
+
     private const val EXTRA_CONSUMED = "bitchord.jamInviteConsumed"
     private const val HOST = "bitchord.kushagrasingh.in"
     private const val CUSTOM_SCHEME = "bitchord"
@@ -67,6 +75,12 @@ object JamInviteLink {
             return ParsedJamInvite(code = code, serverUrl = server)
         }
 
+        // Fork: https://music.tinotenda.co/jam/<CODE>, the invite this app hands out.
+        if ((scheme == "https" || scheme == "http") && host == MARBLE_HOST) {
+            val match = MARBLE_PATH.matchEntire(uri.path.orEmpty()) ?: return null
+            return ParsedJamInvite(code = match.groupValues[1].uppercase(), serverUrl = server)
+        }
+
         // 2. Official web domain: https://bitchord.kushagrasingh.in/invite/<CODE>
         if (scheme == "https" && host == HOST) {
             val match = INVITE_PATH.matchEntire(uri.path.orEmpty()) ?: return null
@@ -79,6 +93,10 @@ object JamInviteLink {
 
     fun url(code: String, customServer: String? = null): String {
         val base = customServer?.trim()?.trimEnd('/')
+        // Fork: a jam on marble's own server is a Marble Music link.
+        if (base.isNullOrBlank() || base.equals(ListenTogether.defaultServer, ignoreCase = true)) {
+            return "$MARBLE_ORIGIN/jam/${code.uppercase()}"
+        }
         return if (!base.isNullOrBlank() && !base.equals(ORIGIN, ignoreCase = true)) {
             "$base/invite/${code.uppercase()}"
         } else {
@@ -124,6 +142,7 @@ object JamInviteLink {
         return withScheme
     }
 
+    private val MARBLE_PATH = Regex("""/jam/([A-Za-z0-9]{${ListenTogether.CODE_LENGTH}})/?""")
     private val INVITE_PATH = Regex("""/invite/([A-Za-z0-9]{${ListenTogether.CODE_LENGTH}})""")
 }
 

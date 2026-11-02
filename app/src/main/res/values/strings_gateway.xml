@@ -69,4 +69,19 @@
     <string name="share_lyrics_description">Pick up to %1$d lines for the card.</string>
     <string name="share_lyrics_pick">Pick a line</string>
     <string name="share_lyrics_as_text">As text</string>
+    <!-- Android Auto: jams and shuffle -->
+    <string name="auto_jam">Jam</string>
+    <string name="auto_jam_start">Start a jam</string>
+    <string name="auto_jam_start_subtitle">Friends join by scanning a code</string>
+    <string name="auto_jam_code">Jam code %1$s</string>
+    <string name="auto_jam_scan">Scan to join, from a phone</string>
+    <plurals name="auto_jam_people">
+        <item quantity="one">%1$d person in the jam</item>
+        <item quantity="other">%1$d people in the jam</item>
+    </plurals>
+    <string name="auto_jam_end">End jam</string>
+    <string name="auto_jam_end_subtitle">Leave it and go back to your own music</string>
+    <string name="auto_jam_ended">Jam ended</string>
+    <string name="auto_jam_failed">Couldn\'t start a jam</string>
+    <string name="auto_shuffle">Shuffle</string>
 </resources>

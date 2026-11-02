@@ -1918,6 +1918,7 @@ class PlaybackService : MediaLibraryService() {
             .build()
         refreshCustomLayouts()
         followRemoteRole()
+        followJamForAuto()
 
         // Last, so a receiver that outlived the app is adopted by a service
         // whose queue is already restored.
@@ -8755,17 +8756,40 @@ class PlaybackService : MediaLibraryService() {
         ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future(Dispatchers.IO) {
             val isGridFolder = parentId == MEDIA_ROOT_ID || parentId == MEDIA_PLAYLISTS_ID
             val items: List<MediaItem> = when (parentId) {
+                // Fork: four tabs, the most a car shows: a fifth was simply not
+                // there. Recents and Liked live under More with the rest.
                 MEDIA_ROOT_ID -> listOf(
                     createFolderItem(MEDIA_QUICK_PICKS_ID, getString(R.string.auto_quick_picks), folderType = MediaMetadata.FOLDER_TYPE_PLAYLISTS),
-                    createFolderItem(MEDIA_RECENTS_ID, getString(R.string.auto_recents), folderType = MediaMetadata.FOLDER_TYPE_PLAYLISTS),
                     createFolderItem(MEDIA_PLAYLISTS_ID, getString(R.string.playlists), folderType = MediaMetadata.FOLDER_TYPE_PLAYLISTS, isGrid = true),
-                    createFolderItem(MEDIA_LIKED_ID, getString(R.string.auto_liked), folderType = MediaMetadata.FOLDER_TYPE_PLAYLISTS),
+                    createFolderItem(MEDIA_JAM_ID, getString(R.string.auto_jam), folderType = MediaMetadata.FOLDER_TYPE_MIXED),
                     createFolderItem(MEDIA_MORE_ID, getString(R.string.more), folderType = MediaMetadata.FOLDER_TYPE_MIXED),
                 )
                 MEDIA_MORE_ID -> listOf(
+                    createFolderItem(MEDIA_RECENTS_ID, getString(R.string.auto_recents), folderType = MediaMetadata.FOLDER_TYPE_PLAYLISTS),
+                    createFolderItem(MEDIA_LIKED_ID, getString(R.string.auto_liked), folderType = MediaMetadata.FOLDER_TYPE_PLAYLISTS),
                     createFolderItem(MEDIA_DOWNLOADS_ID, getString(R.string.downloads), folderType = MediaMetadata.FOLDER_TYPE_MIXED),
                     createFolderItem(MEDIA_LOCAL_MUSIC_ID, getString(R.string.local_music), folderType = MediaMetadata.FOLDER_TYPE_MIXED),
                 )
+                MEDIA_JAM_ID -> jamFolder()
+                // Opening these is the action: a car offers browsing and playing,
+                // and only browsing does nothing to what is playing.
+                MEDIA_JAM_START_ID -> {
+                    if (!ListenTogether.state.value.inJam) {
+                        ListenTogether.createParty().onFailure {
+                            return@future LibraryResult.ofItemList(
+                                ImmutableList.of(
+                                    createInfoItem("jam:failed", getString(R.string.auto_jam_failed), it.message),
+                                ),
+                                null,
+                            )
+                        }
+                    }
+                    jamFolder()
+                }
+                MEDIA_JAM_END_ID -> {
+                    if (ListenTogether.state.value.inJam) ListenTogether.leaveParty()
+                    listOf(createInfoItem("jam:ended", getString(R.string.auto_jam_ended))) + jamFolder()
+                }
                 MEDIA_RECENTS_ID -> {
                     val snapshot = snapshotRecents()
                     val songs = if (snapshot.isNotEmpty()) {
@@ -8926,13 +8950,20 @@ class PlaybackService : MediaLibraryService() {
                     }
                 }
             }
+            // Fork: a Shuffle row on top of every folder of songs.
+            val songFolder = items.any { it.mediaMetadata.isPlayable == true && !it.mediaId.startsWith(SHUFFLE_PREFIX) }
+            val withShuffle = if (songFolder && items.count { it.mediaMetadata.isPlayable == true } > 1) {
+                listOf(shuffleItem(parentId)) + items
+            } else {
+                items
+            }
             val returnParams = LibraryParams.Builder().setExtras(
                 buildContentStyleBundle(
                     if (isGridFolder) CONTENT_STYLE_GRID_ITEM_HINT_VALUE else CONTENT_STYLE_LIST_ITEM_HINT_VALUE,
                     CONTENT_STYLE_LIST_ITEM_HINT_VALUE,
                 ),
             ).build()
-            LibraryResult.ofItemList(ImmutableList.copyOf(paginate(items, page, pageSize)), returnParams)
+            LibraryResult.ofItemList(ImmutableList.copyOf(paginate(withShuffle, page, pageSize)), returnParams)
         }
 
         override fun onGetItem(
@@ -8955,6 +8986,7 @@ class PlaybackService : MediaLibraryService() {
                 MEDIA_QUICK_PICKS_ID -> createFolderItem(MEDIA_QUICK_PICKS_ID, getString(R.string.auto_quick_picks), folderType = MediaMetadata.FOLDER_TYPE_PLAYLISTS)
                 MEDIA_PLAYLISTS_ID -> createFolderItem(MEDIA_PLAYLISTS_ID, getString(R.string.playlists), folderType = MediaMetadata.FOLDER_TYPE_PLAYLISTS, isGrid = true)
                 MEDIA_MORE_ID -> createFolderItem(MEDIA_MORE_ID, getString(R.string.more), folderType = MediaMetadata.FOLDER_TYPE_MIXED)
+                MEDIA_JAM_ID -> createFolderItem(MEDIA_JAM_ID, getString(R.string.auto_jam), folderType = MediaMetadata.FOLDER_TYPE_MIXED)
                 MEDIA_LIKED_ID -> createFolderItem(MEDIA_LIKED_ID, getString(R.string.auto_liked), folderType = MediaMetadata.FOLDER_TYPE_PLAYLISTS)
                 MEDIA_DOWNLOADS_ID -> createFolderItem(MEDIA_DOWNLOADS_ID, getString(R.string.downloads))
                 MEDIA_LOCAL_MUSIC_ID -> createFolderItem(MEDIA_LOCAL_MUSIC_ID, getString(R.string.local_music))
@@ -9120,6 +9152,12 @@ class PlaybackService : MediaLibraryService() {
                 val id = item.mediaId
                 val searchQuery = item.requestMetadata.searchQuery
                 when {
+                    // Fork: the Shuffle row at the top of a folder in the car.
+                    id.startsWith(SHUFFLE_PREFIX) -> {
+                        val inner = MediaItem.Builder().setMediaId(id.removePrefix(SHUFFLE_PREFIX)).build()
+                        val songs = resolveMediaItems(listOf(inner)).filterNot { it.mediaId == inner.mediaId }
+                        resolved.addAll(songs.shuffled())
+                    }
                     !searchQuery.isNullOrBlank() -> {
                         val cached = searchResults[searchQuery]
                         val songs = if (!cached.isNullOrEmpty()) {
@@ -9444,6 +9482,91 @@ class PlaybackService : MediaLibraryService() {
             )
             .build()
 
+    /**
+     * Fork: the car's Jam folder. In a jam: its code with a QR code to scan, who
+     * is in it, and a way to end it. Otherwise a way to start one. Starting and
+     * ending are folders (see onGetChildren), since playing an item would change
+     * what is playing.
+     */
+    private fun jamFolder(): List<MediaItem> {
+        val party = ListenTogether.state.value
+        val code = party.code
+        if (!party.inJam || code == null) {
+            return listOf(
+                createFolderItem(MEDIA_JAM_START_ID, getString(R.string.auto_jam_start), getString(R.string.auto_jam_start_subtitle)),
+            )
+        }
+        val link = com.music.bitchord.data.listentogether.JamInviteLink.url(code)
+        val qr = MediaItem.Builder()
+            .setMediaId("jam:code:$code")
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(getString(R.string.auto_jam_code, code))
+                    .setSubtitle(getString(R.string.auto_jam_scan))
+                    .apply { jamQrPng(link)?.let { setArtworkData(it, MediaMetadata.PICTURE_TYPE_FRONT_COVER) } }
+                    .setIsBrowsable(false)
+                    .setIsPlayable(false)
+                    // A tile rather than a row, so the code is big enough to scan.
+                    .setExtras(Bundle().apply { putInt(EXTRA_CONTENT_STYLE_SINGLE_ITEM, CONTENT_STYLE_GRID_ITEM_HINT_VALUE) })
+                    .build(),
+            )
+            .build()
+        val people = party.members.count { it.connected }
+        return listOf(
+            qr,
+            createInfoItem("jam:members", resources.getQuantityString(R.plurals.auto_jam_people, people, people)),
+            createFolderItem(MEDIA_JAM_END_ID, getString(R.string.auto_jam_end), getString(R.string.auto_jam_end_subtitle)),
+        )
+    }
+
+    /** A QR code for [content] as PNG bytes, black on white with a quiet zone. */
+    private fun jamQrPng(content: String): ByteArray? = runCatching {
+        val size = 480
+        val matrix = com.google.zxing.qrcode.QRCodeWriter().encode(
+            content,
+            com.google.zxing.BarcodeFormat.QR_CODE,
+            size,
+            size,
+            mapOf(com.google.zxing.EncodeHintType.MARGIN to 2),
+        )
+        val pixels = IntArray(size * size) { i ->
+            if (matrix.get(i % size, i / size)) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+        }
+        val bitmap = android.graphics.Bitmap.createBitmap(pixels, size, size, android.graphics.Bitmap.Config.ARGB_8888)
+        java.io.ByteArrayOutputStream().use { out ->
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+            out.toByteArray()
+        }
+    }.getOrNull()
+
+    /**
+     * Fork: the car's Jam folder shows the jam as it stands, so it is drawn again
+     * whenever one starts or ends, or somebody joins or leaves, wherever that
+     * happened (the phone, another member).
+     */
+    private fun followJamForAuto() {
+        scope.launch {
+            ListenTogether.state
+                .map { party -> Triple(party.inJam, party.code, party.members.count { it.connected }) }
+                .distinctUntilChanged()
+                .collect { mediaSession?.notifyChildrenChanged(MEDIA_JAM_ID, Int.MAX_VALUE, null) }
+        }
+    }
+
+    /** Fork: a Shuffle row for the top of a song folder. */
+    private fun shuffleItem(folderId: String): MediaItem =
+        MediaItem.Builder()
+            .setMediaId(SHUFFLE_PREFIX + folderId)
+            .setMediaMetadata(
+                MediaMetadata.Builder()
+                    .setTitle(getString(R.string.auto_shuffle))
+                    .setIsBrowsable(false)
+                    .setIsPlayable(true)
+                    .setExtras(buildContentStyleBundle(CONTENT_STYLE_LIST_ITEM_HINT_VALUE, CONTENT_STYLE_LIST_ITEM_HINT_VALUE))
+                    .build(),
+            )
+            .build()
+
     private fun createInfoItem(mediaId: String, title: String, subtitle: String? = null): MediaItem =
         MediaItem.Builder()
             .setMediaId(mediaId)
@@ -9467,6 +9590,12 @@ class PlaybackService : MediaLibraryService() {
         const val MEDIA_PLAYLISTS_ID = "playlists"
         const val MEDIA_MORE_ID = "more"
         const val MEDIA_LIKED_ID = "liked"
+        /** Fork: jams in the car. See [jamFolder]. */
+        const val MEDIA_JAM_ID = "jam"
+        const val MEDIA_JAM_START_ID = "jam:start"
+        const val MEDIA_JAM_END_ID = "jam:end"
+        /** Fork: a folder's Shuffle row: this, then the folder's id. */
+        const val SHUFFLE_PREFIX = "shuffle:"
         /** See [scheduleForeignCachePurge]: comfortably past the longest crossfade. */
         const val FOREIGN_CACHE_PURGE_DELAY_MS = 30_000L
         /** How many upcoming tracks [scheduleForeignCachePurge] leaves alone for read-ahead and Automix. */
@@ -9479,9 +9608,8 @@ class PlaybackService : MediaLibraryService() {
 
         val ROOT_CHILDREN: List<String> = listOf(
             MEDIA_QUICK_PICKS_ID,
-            MEDIA_RECENTS_ID,
             MEDIA_PLAYLISTS_ID,
-            MEDIA_LIKED_ID,
+            MEDIA_JAM_ID,
             MEDIA_MORE_ID,
         )
 
@@ -9495,6 +9623,8 @@ class PlaybackService : MediaLibraryService() {
         const val EXTRA_CONTENT_STYLE_BROWSABLE_HINT_LEGACY = "androidx.media.utils.CONTENT_STYLE_BROWSABLE_HINT"
         const val EXTRA_CONTENT_STYLE_PLAYABLE_HINT_LEGACY = "androidx.media.utils.CONTENT_STYLE_PLAYABLE_HINT"
         const val CONTENT_STYLE_LIST_ITEM_HINT_VALUE = 1
+        /** Fork: one item's own style, overriding its folder's (the jam's QR tile). */
+        const val EXTRA_CONTENT_STYLE_SINGLE_ITEM = "android.media.browse.extra.CONTENT_STYLE_SINGLE_ITEM"
         const val CONTENT_STYLE_GRID_ITEM_HINT_VALUE = 4
         /**
          * Shared by both players. Identical on purpose: they take turns being

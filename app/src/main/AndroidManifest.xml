@@ -229,6 +229,20 @@
                     android:pathPattern="/invite/......" />
             </intent-filter>
 
+            <!-- Fork: Marble Music jam invites (https://music.tinotenda.co/jam/CODE).
+                 Verified through music.tinotenda.co/.well-known/assetlinks.json,
+                 so a tap opens BitChord where it is installed and the web
+                 join page everywhere else. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="music.tinotenda.co"
+                    android:pathPattern="/jam/......" />
+            </intent-filter>
+
             <!-- Custom scheme for Listen Together invites on custom server deployments. -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
