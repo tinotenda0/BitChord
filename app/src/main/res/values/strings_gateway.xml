@@ -84,4 +84,7 @@
     <string name="auto_jam_ended">Jam ended</string>
     <string name="auto_jam_failed">Couldn\'t start a jam</string>
     <string name="auto_shuffle">Shuffle</string>
+    <string name="auto_play_here">Play here</string>
+    <string name="auto_playing_on">Playing on %1$s</string>
+    <string name="auto_moving_here">Moving the music here…</string>
 </resources>

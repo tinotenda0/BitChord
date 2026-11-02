@@ -221,6 +221,8 @@ const val ACTION_TOGGLE_SHUFFLE = "com.music.bitchord.action.TOGGLE_SHUFFLE"
 
 /** Session actions exposed to Android Auto for the track that is playing. */
 const val ACTION_START_STATION = "com.music.bitchord.action.START_STATION"
+/** Fork: take the music back from the Connect device playing it, onto this phone. */
+const val ACTION_PLAY_HERE = "com.music.bitchord.action.PLAY_HERE"
 const val ACTION_REVERT_TO_ORIGINAL = "com.music.bitchord.action.REVERT_TO_ORIGINAL"
 const val ACTION_SWAP_TO_VERSION = "com.music.bitchord.action.SWAP_TO_VERSION"
 
@@ -796,6 +798,7 @@ class PlaybackService : MediaLibraryService() {
     private val autoplayCommand = SessionCommand(ACTION_TOGGLE_AUTOPLAY, Bundle.EMPTY)
     private val shuffleCommand = SessionCommand(ACTION_TOGGLE_SHUFFLE, Bundle.EMPTY)
     private val startStationCommand = SessionCommand(ACTION_START_STATION, Bundle.EMPTY)
+    private val playHereCommand = SessionCommand(ACTION_PLAY_HERE, Bundle.EMPTY)
     private val revertToOriginalCommand = SessionCommand(ACTION_REVERT_TO_ORIGINAL, Bundle.EMPTY)
     private val swapToVersionCommand = SessionCommand(ACTION_SWAP_TO_VERSION, Bundle.EMPTY)
     private val beginRadioQueueCommand = SessionCommand(ACTION_BEGIN_RADIO_QUEUE, Bundle.EMPTY)
@@ -2215,7 +2218,26 @@ class PlaybackService : MediaLibraryService() {
                     .setDisplayName(getString(R.string.revert_to_original))
                     .build()
             }
+        // Fork: while another of the account's devices is playing, this phone (and
+        // so the car) only shows it; one press brings the music here. First, so
+        // a car with few slots keeps it.
+        val party = ListenTogether.state.value
+        if (party.isConnect && party.isRemote) {
+            val playHere = CommandButton.Builder(CommandButton.ICON_UNDEFINED)
+                .setCustomIconResId(R.drawable.ic_play_here)
+                .setSessionCommand(playHereCommand)
+                .setDisplayName(getString(R.string.auto_play_here))
+                .build()
+            return listOf(playHere) + notificationButtons()
+        }
         return notificationButtons() + listOfNotNull(station, revert)
+    }
+
+    /** Fork: "Play here", from the car: this phone becomes the device playing. */
+    private fun playHereFromSession() {
+        val party = ListenTogether.state.value
+        val me = party.you?.memberId ?: return
+        if (party.isConnect && party.isRemote) ListenTogether.transfer(me)
     }
 
     /** Android Auto / Automotive controllers currently connected to the session. */
@@ -8629,6 +8651,7 @@ class PlaybackService : MediaLibraryService() {
                 .add(autoplayCommand)
                 .add(shuffleCommand)
                 .add(startStationCommand)
+                .add(playHereCommand)
                 .add(revertToOriginalCommand)
                 .add(swapToVersionCommand)
                 .add(beginRadioQueueCommand)
@@ -8666,6 +8689,7 @@ class PlaybackService : MediaLibraryService() {
                 ACTION_TOGGLE_AUTOPLAY -> toggleAutoplayFromNotification()
                 ACTION_TOGGLE_SHUFFLE -> toggleShuffleFromSession()
                 ACTION_START_STATION -> startStationFromSession()
+                ACTION_PLAY_HERE -> playHereFromSession()
                 ACTION_REVERT_TO_ORIGINAL -> revertCurrentToOriginal()
                 ACTION_SWAP_TO_VERSION -> swapCurrentToVersion(args)
                 ACTION_BEGIN_RADIO_QUEUE -> beginRadioQueue()
@@ -8785,6 +8809,11 @@ class PlaybackService : MediaLibraryService() {
                         }
                     }
                     jamFolder()
+                }
+                // Opening it is the action, as for the jam: see MEDIA_JAM_START_ID.
+                MEDIA_PLAY_HERE_ID -> {
+                    playHereFromSession()
+                    listOf(createInfoItem("connect:moving", getString(R.string.auto_moving_here)))
                 }
                 MEDIA_JAM_END_ID -> {
                     if (ListenTogether.state.value.inJam) ListenTogether.leaveParty()
@@ -9490,6 +9519,18 @@ class PlaybackService : MediaLibraryService() {
      */
     private fun jamFolder(): List<MediaItem> {
         val party = ListenTogether.state.value
+        // Fork: playing on another of the account's devices: bring it here.
+        if (party.isConnect && party.isRemote) {
+            val where = party.output?.let { it.deviceName.ifBlank { it.displayName } }.orEmpty()
+            return listOf(
+                createFolderItem(
+                    MEDIA_PLAY_HERE_ID,
+                    getString(R.string.auto_play_here),
+                    getString(R.string.auto_playing_on, where),
+                ),
+                createFolderItem(MEDIA_JAM_START_ID, getString(R.string.auto_jam_start), getString(R.string.auto_jam_start_subtitle)),
+            )
+        }
         val code = party.code
         if (!party.inJam || code == null) {
             return listOf(
@@ -9547,7 +9588,9 @@ class PlaybackService : MediaLibraryService() {
     private fun followJamForAuto() {
         scope.launch {
             ListenTogether.state
-                .map { party -> Triple(party.inJam, party.code, party.members.count { it.connected }) }
+                .map { party ->
+                    listOf(party.inJam, party.code, party.members.count { it.connected }, party.isRemote, party.output?.memberId)
+                }
                 .distinctUntilChanged()
                 .collect { mediaSession?.notifyChildrenChanged(MEDIA_JAM_ID, Int.MAX_VALUE, null) }
         }
@@ -9594,6 +9637,7 @@ class PlaybackService : MediaLibraryService() {
         const val MEDIA_JAM_ID = "jam"
         const val MEDIA_JAM_START_ID = "jam:start"
         const val MEDIA_JAM_END_ID = "jam:end"
+        const val MEDIA_PLAY_HERE_ID = "connect:play-here"
         /** Fork: a folder's Shuffle row: this, then the folder's id. */
         const val SHUFFLE_PREFIX = "shuffle:"
         /** See [scheduleForeignCachePurge]: comfortably past the longest crossfade. */
