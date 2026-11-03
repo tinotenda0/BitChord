@@ -93,6 +93,15 @@ class CarMedia(private val context: CarContext, lifecycle: Lifecycle) {
         b.play()
     }
 
+    /** Plays a whole folder (a playlist, Liked songs), in order or shuffled. */
+    fun playAll(folderId: String, shuffle: Boolean) {
+        val b = browser ?: return
+        // The service resolves both: the folder's songs, or "shuffle:" and them shuffled.
+        b.setMediaItem(MediaItem.Builder().setMediaId(if (shuffle) "shuffle:$folderId" else folderId).build())
+        b.prepare()
+        b.play()
+    }
+
     /** [item]'s artwork for a template, or null until it has loaded (the screen redraws then). */
     fun artwork(item: MediaItem): CarIcon? {
         val key = item.mediaId
