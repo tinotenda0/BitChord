@@ -219,6 +219,8 @@ android {
             // so a test of that layer fails on the logging rather than on the
             // logic it was written to check.
             isReturnDefaultValues = true
+            // Robolectric (the Android Auto screen tests) reads the app's real resources.
+            isIncludeAndroidResources = true
         }
     }
 }
@@ -456,6 +458,11 @@ dependencies {
     // the OkHttp version already on the runtime classpath.
     testImplementation("com.squareup.okhttp3:mockwebserver:5.3.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    // Fork: the Android Auto screens are built in tests (car/), so a template that
+    // breaks the Car App Library's rules fails here rather than crashing in a car.
+    testImplementation("androidx.car.app:app-testing:1.8.0-rc01")
+    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("androidx.test:core:1.6.1")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 }

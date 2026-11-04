@@ -39,12 +39,32 @@ import kotlinx.coroutines.launch
 
 private fun CarContext.icon(res: Int): CarIcon = CarIcon.Builder(IconCompat.createWithResource(this, res)).build()
 
-private fun CarContext.action(title: Int, icon: Int, primary: Boolean = false, onClick: () -> Unit): Action =
+/**
+ * A titled button. The templates are strict about these, and a breach throws
+ * when the screen is built, which Android Auto shows as the app crashing:
+ *  - [fab]: a floating button on a SectionedItemTemplate. It is icon-only (no
+ *    text allowed), must carry a non-default background colour and must not be
+ *    flagged primary (the limit is zero); [highlight] picks the accent colour.
+ *  - [parkedOnly]: a sign-in template's button, which must use a parked-only
+ *    click listener and may not be primary either.
+ *  - otherwise (header actions): no colour, no flag.
+ */
+private fun CarContext.action(
+    title: Int,
+    icon: Int,
+    fab: Boolean = false,
+    highlight: Boolean = false,
+    parkedOnly: Boolean = false,
+    onClick: () -> Unit,
+): Action =
     Action.Builder()
-        .setTitle(getString(title))
+        .apply { if (!fab) setTitle(getString(title)) }
         .setIcon(icon(icon))
-        .apply { if (primary) setFlags(Action.FLAG_PRIMARY).setBackgroundColor(CarColor.PRIMARY) }
-        .setOnClickListener(onClick)
+        .apply { if (fab) setBackgroundColor(if (highlight) CarColor.PRIMARY else CarColor.SECONDARY) }
+        .apply {
+            if (parkedOnly) setOnClickListener(androidx.car.app.model.ParkedOnlyOnClickListener.create(onClick))
+            else setOnClickListener(onClick)
+        }
         .build()
 
 /** Media items a car list can show: songs and folders, not the old browser's Shuffle and message rows. */
@@ -52,7 +72,7 @@ private fun List<MediaItem>.shown(): List<MediaItem> =
     filterNot { it.mediaId.startsWith("shuffle:") || it.mediaId.startsWith("msg:") }
 
 /** Shared by the screens: a screen that redraws when the music service or Connect/jam state changes. */
-abstract class CarScreen(carContext: CarContext, protected val media: CarMedia) : Screen(carContext) {
+abstract class CarScreen(carContext: CarContext, protected val media: CarSource) : Screen(carContext) {
     private val redraw: () -> Unit = { onMediaChanged() }
 
     init {
@@ -74,6 +94,7 @@ abstract class CarScreen(carContext: CarContext, protected val media: CarMedia) 
     protected fun nowPlayingAction(): Action =
         Action.Builder()
             .setIcon(carContext.icon(R.drawable.ic_car_now_playing))
+            .setBackgroundColor(CarColor.SECONDARY)
             .setOnClickListener { openNowPlaying() }
             .build()
 
@@ -109,7 +130,7 @@ abstract class CarScreen(carContext: CarContext, protected val media: CarMedia) 
 }
 
 /** Home, Library and Jam, as tabs. */
-class CarHomeScreen(carContext: CarContext, media: CarMedia) : CarScreen(carContext, media) {
+class CarHomeScreen(carContext: CarContext, media: CarSource) : CarScreen(carContext, media) {
 
     private var tab = TAB_HOME
     private var recents: List<MediaItem>? = null
@@ -181,7 +202,7 @@ class CarHomeScreen(carContext: CarContext, media: CarMedia) : CarScreen(carCont
             )
         }
         template.addSection(
-            RowSection.Builder()
+            RowSection.Builder().setNoItemsMessage(carContext.getString(R.string.car_nothing_here))
                 .setTitle(carContext.getString(R.string.auto_quick_picks))
                 .setNoItemsMessage(carContext.getString(R.string.car_nothing_here))
                 .setItems(picks.take(20).map { item -> songRow(item) { open(item) } })
@@ -202,7 +223,7 @@ class CarHomeScreen(carContext: CarContext, media: CarMedia) : CarScreen(carCont
                     .build(),
             )
             .addSection(
-                RowSection.Builder()
+                RowSection.Builder().setNoItemsMessage(carContext.getString(R.string.car_nothing_here))
                     .addItem(
                         Row.Builder()
                             .setTitle(carContext.getString(R.string.auto_liked))
@@ -232,7 +253,7 @@ class CarHomeScreen(carContext: CarContext, media: CarMedia) : CarScreen(carCont
             val people = s.members.filter { it.connected }
             return SectionedItemTemplate.Builder()
                 .addSection(
-                    RowSection.Builder()
+                    RowSection.Builder().setNoItemsMessage(carContext.getString(R.string.car_nothing_here))
                         .addItem(
                             Row.Builder()
                                 .setTitle(carContext.getString(R.string.auto_jam_code, code))
@@ -244,7 +265,7 @@ class CarHomeScreen(carContext: CarContext, media: CarMedia) : CarScreen(carCont
                         .build(),
                 )
                 .addSection(
-                    RowSection.Builder()
+                    RowSection.Builder().setNoItemsMessage(carContext.getString(R.string.car_nothing_here))
                         .setTitle(carContext.getString(R.string.car_in_the_jam))
                         .setItems(
                             people.map { m ->
@@ -257,18 +278,19 @@ class CarHomeScreen(carContext: CarContext, media: CarMedia) : CarScreen(carCont
                         )
                         .build(),
                 )
-                .addAction(carContext.action(R.string.car_show_qr, R.drawable.ic_car_qr, primary = true) { screenManager.push(CarJamCodeScreen(carContext, media)) })
-                .addAction(carContext.action(R.string.auto_jam_end, R.drawable.ic_car_close) { endJam() })
+                .addAction(carContext.action(R.string.car_show_qr, R.drawable.ic_car_qr, fab = true, highlight = true) { screenManager.push(CarJamCodeScreen(carContext, media)) })
+                .addAction(carContext.action(R.string.auto_jam_end, R.drawable.ic_car_close, fab = true) { endJam() })
                 .build()
         }
         val template = SectionedItemTemplate.Builder()
             .addSection(
-                RowSection.Builder()
+                RowSection.Builder().setNoItemsMessage(carContext.getString(R.string.car_nothing_here))
                     .addItem(
                         Row.Builder()
                             .setTitle(carContext.getString(R.string.car_jam_pitch_title))
                             .addText(carContext.getString(R.string.car_jam_pitch))
                             .setImage(carContext.icon(R.drawable.ic_car_jam), Row.IMAGE_TYPE_ICON)
+                            .setOnClickListener { startJam() }
                             .build(),
                     )
                     .build(),
@@ -276,11 +298,11 @@ class CarHomeScreen(carContext: CarContext, media: CarMedia) : CarScreen(carCont
         val devices = connectDevices()
         if (devices.isNotEmpty()) {
             template.addSection(
-                RowSection.Builder().setTitle(carContext.getString(R.string.car_or_your_devices)).setItems(devices).build(),
+                RowSection.Builder().setNoItemsMessage(carContext.getString(R.string.car_nothing_here)).setTitle(carContext.getString(R.string.car_or_your_devices)).setItems(devices).build(),
             )
         }
         return template
-            .addAction(carContext.action(R.string.auto_jam_start, R.drawable.ic_car_jam, primary = true) { startJam() })
+            .addAction(carContext.action(R.string.auto_jam_start, R.drawable.ic_car_jam, fab = true, highlight = true) { startJam() })
             .build()
     }
 
@@ -343,7 +365,7 @@ class CarHomeScreen(carContext: CarContext, media: CarMedia) : CarScreen(carCont
 }
 
 /** A playlist or other folder of songs: its name, Play and Shuffle, then the songs. */
-class CarCollectionScreen(carContext: CarContext, media: CarMedia, private val folder: MediaItem) : CarScreen(carContext, media) {
+class CarCollectionScreen(carContext: CarContext, media: CarSource, private val folder: MediaItem) : CarScreen(carContext, media) {
 
     private var songs: List<MediaItem>? = null
 
@@ -363,26 +385,25 @@ class CarCollectionScreen(carContext: CarContext, media: CarMedia, private val f
         return SectionedItemTemplate.Builder()
             .setHeader(header)
             .addSection(
-                RowSection.Builder()
-                    .setNoItemsMessage(carContext.getString(R.string.car_nothing_here))
+                RowSection.Builder().setNoItemsMessage(carContext.getString(R.string.car_nothing_here))
                     .setItems(list.take(100).map { item -> songRow(item) { media.play(item); openNowPlaying() } })
                     .build(),
             )
-            .addAction(carContext.action(R.string.car_play, R.drawable.ic_car_play, primary = true) { media.playAll(folder.mediaId, shuffle = false); openNowPlaying() })
-            .addAction(carContext.action(R.string.auto_shuffle, R.drawable.ic_car_shuffle) { media.playAll(folder.mediaId, shuffle = true); openNowPlaying() })
+            .addAction(carContext.action(R.string.car_play, R.drawable.ic_car_play, fab = true, highlight = true) { media.playAll(folder.mediaId, shuffle = false); openNowPlaying() })
+            .addAction(carContext.action(R.string.auto_shuffle, R.drawable.ic_car_shuffle, fab = true) { media.playAll(folder.mediaId, shuffle = true); openNowPlaying() })
             .build()
     }
 }
 
 /** Now playing. The car draws the artwork, controls and progress from the session; the header is ours. */
-class CarNowPlayingScreen(carContext: CarContext, media: CarMedia) : CarScreen(carContext, media) {
+class CarNowPlayingScreen(carContext: CarContext, media: CarSource) : CarScreen(carContext, media) {
     override fun onGetTemplate(): Template {
         val s = ListenTogether.state.value
         val header = Header.Builder().setStartHeaderAction(Action.BACK)
         if (s.isConnect && s.isRemote) {
             val where = s.output?.let { it.deviceName.ifBlank { it.displayName } }.orEmpty()
             header.setTitle(carContext.getString(R.string.auto_playing_on, where))
-            header.addEndHeaderAction(carContext.action(R.string.auto_play_here, R.drawable.ic_play_here, primary = true) { playHere() })
+            header.addEndHeaderAction(carContext.action(R.string.auto_play_here, R.drawable.ic_play_here) { playHere() })
         } else {
             header.setTitle(carContext.getString(R.string.car_now_playing))
             header.addEndHeaderAction(carContext.action(R.string.auto_jam, R.drawable.ic_car_jam) { screenManager.push(CarJamScreen(carContext, media)) })
@@ -399,7 +420,7 @@ class CarNowPlayingScreen(carContext: CarContext, media: CarMedia) : CarScreen(c
 }
 
 /** The jam from the player: the same as the Jam tab, on its own screen. */
-class CarJamScreen(carContext: CarContext, media: CarMedia) : CarScreen(carContext, media) {
+class CarJamScreen(carContext: CarContext, media: CarSource) : CarScreen(carContext, media) {
     override fun onGetTemplate(): Template {
         val s = ListenTogether.state.value
         val code = s.code
@@ -408,26 +429,33 @@ class CarJamScreen(carContext: CarContext, media: CarMedia) : CarScreen(carConte
             return SectionedItemTemplate.Builder()
                 .setHeader(header)
                 .addSection(
-                    RowSection.Builder()
-                        .setItems(listOf(Row.Builder().setTitle(carContext.getString(R.string.auto_jam_code, code)).addText(carContext.getString(R.string.car_jam_join_at)).build()) +
+                    RowSection.Builder().setNoItemsMessage(carContext.getString(R.string.car_nothing_here))
+                        .setItems(listOf(Row.Builder().setTitle(carContext.getString(R.string.auto_jam_code, code)).addText(carContext.getString(R.string.car_jam_join_at)).setImage(carContext.icon(R.drawable.ic_car_qr), Row.IMAGE_TYPE_ICON).setOnClickListener { screenManager.push(CarJamCodeScreen(carContext, media)) }.build()) +
                             s.members.filter { it.connected }.map { Row.Builder().setTitle(it.displayName.ifBlank { "?" }).setImage(carContext.icon(R.drawable.ic_car_person), Row.IMAGE_TYPE_ICON).build() })
                         .build(),
                 )
-                .addAction(carContext.action(R.string.car_show_qr, R.drawable.ic_car_qr, primary = true) { screenManager.push(CarJamCodeScreen(carContext, media)) })
-                .addAction(carContext.action(R.string.auto_jam_end, R.drawable.ic_car_close) { lifecycleScope.launch { ListenTogether.leaveParty() } })
+                .addAction(carContext.action(R.string.car_show_qr, R.drawable.ic_car_qr, fab = true, highlight = true) { screenManager.push(CarJamCodeScreen(carContext, media)) })
+                .addAction(carContext.action(R.string.auto_jam_end, R.drawable.ic_car_close, fab = true) { lifecycleScope.launch { ListenTogether.leaveParty() } })
                 .build()
         }
         return SectionedItemTemplate.Builder()
             .setHeader(header)
             .addSection(
-                RowSection.Builder()
-                    .addItem(Row.Builder().setTitle(carContext.getString(R.string.car_jam_pitch_title)).addText(carContext.getString(R.string.car_jam_pitch)).build())
+                RowSection.Builder().setNoItemsMessage(carContext.getString(R.string.car_nothing_here))
+                    .addItem(
+                        Row.Builder().setTitle(carContext.getString(R.string.car_jam_pitch_title)).addText(carContext.getString(R.string.car_jam_pitch))
+                            .setImage(carContext.icon(R.drawable.ic_car_jam), Row.IMAGE_TYPE_ICON)
+                            .setOnClickListener { startJamHere() }
+                            .build(),
+                    )
                     .build(),
             )
-            .addAction(carContext.action(R.string.auto_jam_start, R.drawable.ic_car_jam, primary = true) {
-                lifecycleScope.launch { ListenTogether.createParty().onSuccess { screenManager.push(CarJamCodeScreen(carContext, media)) } }
-            })
+            .addAction(carContext.action(R.string.auto_jam_start, R.drawable.ic_car_jam, fab = true, highlight = true) { startJamHere() })
             .build()
+    }
+
+    private fun startJamHere() {
+        lifecycleScope.launch { ListenTogether.createParty().onSuccess { screenManager.push(CarJamCodeScreen(carContext, media)) } }
     }
 }
 
@@ -435,14 +463,14 @@ class CarJamScreen(carContext: CarContext, media: CarMedia) : CarScreen(carConte
  * The jam invite, big enough to scan: the car's QR code screen (the sign-in
  * template's QR method, which Android Auto shows while parked).
  */
-class CarJamCodeScreen(carContext: CarContext, media: CarMedia) : CarScreen(carContext, media) {
+class CarJamCodeScreen(carContext: CarContext, media: CarSource) : CarScreen(carContext, media) {
     override fun onGetTemplate(): Template {
         val s = ListenTogether.state.value
         val code = s.code
         if (!s.inJam || code == null) {
             return SectionedItemTemplate.Builder()
                 .setHeader(Header.Builder().setStartHeaderAction(Action.BACK).setTitle(carContext.getString(R.string.auto_jam)).build())
-                .addSection(RowSection.Builder().addItem(Row.Builder().setTitle(carContext.getString(R.string.auto_jam_ended)).build()).build())
+                .addSection(RowSection.Builder().setNoItemsMessage(carContext.getString(R.string.car_nothing_here)).addItem(Row.Builder().setTitle(carContext.getString(R.string.auto_jam_ended)).build()).build())
                 .build()
         }
         val names = s.members.filter { it.connected }.map { it.displayName }.filter { it.isNotBlank() }
@@ -451,8 +479,8 @@ class CarJamCodeScreen(carContext: CarContext, media: CarMedia) : CarScreen(carC
             .setTitle(carContext.getString(R.string.car_join_the_jam))
             .setInstructions(carContext.getString(R.string.car_jam_scan_instructions, code))
             .apply { if (names.isNotEmpty()) setAdditionalText(carContext.getString(R.string.car_jam_whos_in, names.joinToString(", "))) }
-            .addAction(carContext.action(R.string.car_done, R.drawable.ic_car_check, primary = true) { screenManager.pop() })
-            .addAction(carContext.action(R.string.auto_jam_end, R.drawable.ic_car_close) {
+            .addAction(carContext.action(R.string.car_done, R.drawable.ic_car_check, parkedOnly = true) { screenManager.pop() })
+            .addAction(carContext.action(R.string.auto_jam_end, R.drawable.ic_car_close, parkedOnly = true) {
                 lifecycleScope.launch { ListenTogether.leaveParty(); screenManager.pop() }
             })
             .build()
@@ -460,7 +488,7 @@ class CarJamCodeScreen(carContext: CarContext, media: CarMedia) : CarScreen(carC
 }
 
 /** What plays next, from the session's queue; tap to jump there. */
-class CarQueueScreen(carContext: CarContext, media: CarMedia) : CarScreen(carContext, media) {
+class CarQueueScreen(carContext: CarContext, media: CarSource) : CarScreen(carContext, media) {
     override fun onGetTemplate(): Template {
         val c = media.controller
         val header = Header.Builder().setStartHeaderAction(Action.BACK).setTitle(carContext.getString(R.string.car_queue)).build()
@@ -470,7 +498,7 @@ class CarQueueScreen(carContext: CarContext, media: CarMedia) : CarScreen(carCon
         return SectionedItemTemplate.Builder()
             .setHeader(header)
             .addSection(
-                RowSection.Builder()
+                RowSection.Builder().setNoItemsMessage(carContext.getString(R.string.car_nothing_here))
                     .setTitle(carContext.getString(R.string.car_up_next))
                     .setNoItemsMessage(carContext.getString(R.string.car_nothing_here))
                     .setItems(upcoming.map { (index, item) -> songRow(item) { c.seekToDefaultPosition(index); c.play(); screenManager.pop() } })

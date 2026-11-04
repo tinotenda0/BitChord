@@ -34,7 +34,18 @@ import kotlinx.coroutines.launch
  * nothing about where songs come from is duplicated here. It also loads the
  * artwork the templates draw, and tells the screens when some arrives.
  */
-class CarMedia(private val context: CarContext, lifecycle: Lifecycle) {
+interface CarSource {
+    val connected: Boolean
+    val controller: androidx.media3.common.Player?
+    fun listen(onChange: () -> Unit)
+    fun unlisten(onChange: () -> Unit)
+    suspend fun children(parentId: String, pageSize: Int = 60): List<MediaItem>
+    fun play(item: MediaItem)
+    fun playAll(folderId: String, shuffle: Boolean)
+    fun artwork(item: MediaItem): CarIcon?
+}
+
+class CarMedia(private val context: CarContext, lifecycle: Lifecycle) : CarSource {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var browser: MediaBrowser? = null
@@ -64,29 +75,29 @@ class CarMedia(private val context: CarContext, lifecycle: Lifecycle) {
         )
     }
 
-    val connected: Boolean get() = browser != null
-    val controller: MediaBrowser? get() = browser
+    override val connected: Boolean get() = browser != null
+    override val controller: MediaBrowser? get() = browser
 
     /** Called back on the main thread when the connection or some artwork arrives. */
-    fun listen(onChange: () -> Unit) {
+    override fun listen(onChange: () -> Unit) {
         listeners += onChange
     }
 
-    fun unlisten(onChange: () -> Unit) {
+    override fun unlisten(onChange: () -> Unit) {
         listeners -= onChange
     }
 
     private fun changed() = listeners.toList().forEach { it() }
 
     /** A folder of the music service's tree; empty when it has nothing or can't be reached. */
-    suspend fun children(parentId: String, pageSize: Int = 60): List<MediaItem> {
+    override suspend fun children(parentId: String, pageSize: Int): List<MediaItem> {
         val b = browser ?: return emptyList()
         return runCatching { b.getChildren(parentId, 0, pageSize, null).await().value.orEmpty() }
             .getOrDefault(emptyList())
     }
 
     /** Plays a song or a whole folder (a playlist, a Shuffle row), as the car asked. */
-    fun play(item: MediaItem) {
+    override fun play(item: MediaItem) {
         val b = browser ?: return
         b.setMediaItem(MediaItem.Builder().setMediaId(item.mediaId).setMediaMetadata(item.mediaMetadata).build())
         b.prepare()
@@ -94,7 +105,7 @@ class CarMedia(private val context: CarContext, lifecycle: Lifecycle) {
     }
 
     /** Plays a whole folder (a playlist, Liked songs), in order or shuffled. */
-    fun playAll(folderId: String, shuffle: Boolean) {
+    override fun playAll(folderId: String, shuffle: Boolean) {
         val b = browser ?: return
         // The service resolves both: the folder's songs, or "shuffle:" and them shuffled.
         b.setMediaItem(MediaItem.Builder().setMediaId(if (shuffle) "shuffle:$folderId" else folderId).build())
@@ -103,7 +114,7 @@ class CarMedia(private val context: CarContext, lifecycle: Lifecycle) {
     }
 
     /** [item]'s artwork for a template, or null until it has loaded (the screen redraws then). */
-    fun artwork(item: MediaItem): CarIcon? {
+    override fun artwork(item: MediaItem): CarIcon? {
         val key = item.mediaId
         icons[key]?.let { return it }
         item.mediaMetadata.artworkData?.let { bytes ->

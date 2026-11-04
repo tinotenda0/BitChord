@@ -249,6 +249,12 @@ object ListenTogether {
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
+    /** Fork: for tests of what reads [state] (the Android Auto screens), never the app. */
+    @androidx.annotation.VisibleForTesting
+    internal fun setStateForTest(value: State) {
+        _state.value = value
+    }
+
     private val _activity = MutableStateFlow<List<PartyActivity>>(emptyList())
     /** Last 100 actions for this app session only. */
     val activity: StateFlow<List<PartyActivity>> = _activity.asStateFlow()
