@@ -38,6 +38,15 @@
             android:name="com.google.android.wearable.standalone"
             android:value="false" />
 
+        <!-- The phone app's notifications stay on the phone. Without this, Wear OS
+             bridges its playback notification into the system's media controls,
+             next to this app's own now-playing chip, and the watch shows the same
+             song twice. Wear OS matches by package name, so this works because
+             the watch and phone apps share one. -->
+        <meta-data
+            android:name="com.google.android.wearable.notificationBridgeMode"
+            android:value="NO_BRIDGING" />
+
         <activity
             android:name=".WearActivity"
             android:exported="true"
