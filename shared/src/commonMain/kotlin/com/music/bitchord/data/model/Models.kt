@@ -471,6 +471,25 @@ data class HomeShelf(
     val layout: ShelfLayout = ShelfLayout.CARDS,
 )
 
+/** These shelves without their music videos, and without any shelf that leaves empty. */
+fun List<HomeShelf>.withoutVideos(): List<HomeShelf> = mapNotNull { shelf ->
+    if (shelf.layout == ShelfLayout.VIDEO || shelf.isVideosByName()) return@mapNotNull null
+    val items = shelf.items.filterNot { it.isVideo }
+    if (items.isEmpty()) null else shelf.copy(items = items)
+}
+
+/**
+ * Fork: Trending and Shorts are shelves of videos even where YouTube marks an
+ * item as a song, so they go by name too (English, Vietnamese, Japanese).
+ */
+private fun HomeShelf.isVideosByName(): Boolean {
+    val t = title.trim()
+    return t.startsWith("Shorts", ignoreCase = true) ||
+        t.equals("Trending", ignoreCase = true) ||
+        t.equals("Thịnh hành", ignoreCase = true) ||
+        t.equals("急上昇", ignoreCase = true)
+}
+
 /**
  * The layout a shelf of [items] gets, as the web player decides it: rows when
  * YouTube itself listed tracks as rows (or the shelf is Listen again, which the
