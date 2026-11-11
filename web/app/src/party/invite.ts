@@ -5,6 +5,8 @@
  */
 
 export const INVITE_ORIGIN = 'https://bitchord.kushagrasingh.in';
+/** Fork: the invite the app hands out, https://music.tinotenda.co/jam/<CODE> (JamInviteLink.kt). */
+export const MARBLE_INVITE_ORIGIN = 'https://music.tinotenda.co';
 export const CODE_LENGTH = 6;
 
 /** Letters and digits only, upper case; null unless it's six of them. */
@@ -36,7 +38,7 @@ export function parseInvite(value: string): { code: string; serverUrl: string | 
     const code = cleanCode(url.pathname.replace(/^\/+|\/+$/g, '') || url.searchParams.get('code') || '');
     return code ? { code, serverUrl: server } : null;
   }
-  const match = url.pathname.match(/^\/invite\/([A-Za-z0-9]{6})$/);
+  const match = url.pathname.match(/^\/(?:invite|jam)\/([A-Za-z0-9]{6})$/);
   if ((url.protocol === 'https:' || url.protocol === 'http:') && match) return { code: match[1]!.toUpperCase(), serverUrl: server };
   return null;
 }
@@ -44,6 +46,6 @@ export function parseInvite(value: string): { code: string; serverUrl: string | 
 /** The link to share (JamInviteLink.url): a custom server's own invite page, else the public site's. */
 export function inviteUrl(code: string, customServer: string | null): string {
   const base = customServer?.trim().replace(/\/+$/, '');
-  const origin = base && base.toLowerCase() !== INVITE_ORIGIN ? base : INVITE_ORIGIN;
-  return `${origin}/invite/${code.toUpperCase()}`;
+  if (base && base.toLowerCase() !== INVITE_ORIGIN) return `${base}/invite/${code.toUpperCase()}`;
+  return `${MARBLE_INVITE_ORIGIN}/jam/${code.toUpperCase()}`;
 }

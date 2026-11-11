@@ -1,0 +1,26 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.music.bitchord",
+      "sha256_cert_fingerprints": [
+        "41:7F:1D:20:A4:13:B4:EB:94:10:DA:FF:42:47:1D:33:7E:FC:AF:85:FA:82:53:F8:3B:17:40:3E:3B:FC:A6:96"
+      ]
+    }
+  },
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.dev.bitchord",
+      "sha256_cert_fingerprints": [
+        "41:7F:1D:20:A4:13:B4:EB:94:10:DA:FF:42:47:1D:33:7E:FC:AF:85:FA:82:53:F8:3B:17:40:3E:3B:FC:A6:96"
+      ]
+    }
+  }
+]

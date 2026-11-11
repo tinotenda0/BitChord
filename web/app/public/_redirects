@@ -1,0 +1,4 @@
+# Fork: jam invites from the app (music.tinotenda.co/jam/CODE) open Marble Music's jam page for
+# anyone without the app installed (with it, Android hands the link to the app before this).
+/jam/:code   https://join.tinotenda.co/jam?code=:code   302
+/jam         https://join.tinotenda.co/jam              302
