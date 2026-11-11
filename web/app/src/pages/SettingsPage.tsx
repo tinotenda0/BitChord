@@ -1,4 +1,4 @@
-import { ChevronRight, Users } from 'lucide-react';
+import { ChevronRight, Gem, Users } from 'lucide-react';
 import { lazy, Suspense, useState, type ComponentType, type ReactNode } from 'react';
 import { MdOutlineExtension } from 'react-icons/md';
 import { SiApplemusic, SiDiscord, SiSpotify, SiYoutubemusic } from 'react-icons/si';
@@ -13,7 +13,7 @@ import { Select } from '@/components/Select';
 import { AUTOMIX_BARS } from '@/playback/automix/choices';
 import { CROSSFADE_CHOICES, usePlayer } from '@/state/player';
 import { AppleMusicIntegration, AppleMusicToggles, CanvasToggle, DiscordIntegration, LyricSourcesAccess, SpotifyIntegration, Toggle } from './IntegrationSettings';
-import { MarbleSettings } from './MarbleSettings';
+import { MarbleIntegration } from './MarbleSettings';
 import { settingsUi } from './settingsStyles';
 
 const LyricsSettings = lazy(() => import('@/shell/LyricsSettings').then((m) => ({ default: m.LyricsSettings })));
@@ -94,6 +94,12 @@ export default function SettingsPage() {
             <span className={settingsUi.integrationName}>Spotify</span>
             {present ? <SpotifyIntegration /> : <span className={settingsUi.value}>Needs the extension</span>}
           </div>
+          {/* Fork: marble, for Connect and listening stats. */}
+          <div className={settingsUi.integration}>
+            <Glyph Icon={Gem} color="#3a3a3c" />
+            <span className={settingsUi.integrationName}>Marble</span>
+            <MarbleIntegration />
+          </div>
           {present && discord.state === 'ready' && discord.discord.available && (
             <LinkRow to="/settings/discord" icon={<Glyph Icon={SiDiscord} color="#5865f2" />} title="Discord" value={discordText} />
           )}
@@ -117,10 +123,6 @@ export default function SettingsPage() {
           />
           <CanvasToggle />
         </section>
-
-        {/* Fork: marble, for Connect and listening stats. */}
-        <h2 className={settingsUi.sectionHeader}>Marble</h2>
-        <MarbleSettings />
 
         <h2 className={settingsUi.sectionHeader}>Apple Music</h2>
         <section className={settingsUi.group}>
