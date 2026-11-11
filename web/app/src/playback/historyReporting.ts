@@ -5,7 +5,7 @@ import { getBridge } from '@/extension/bridge';
 import { extensionQueryKey } from '@/extension/useExtension';
 import { ensureYtAuth } from '@/extension/useYtAuth';
 import { queryClient } from '@/lib/queryClient';
-import { getAudio, onTrackEnded, usePlayer } from '@/state/player';
+import { getAudio, onTrackEnded, remotePlayer, usePlayer } from '@/state/player';
 import { getSignedInnertube } from './youtube/innertube';
 import { trackLog } from './trackLog';
 
@@ -199,7 +199,9 @@ function sample(): void {
   const { nowPlaying, status } = usePlayer.getState();
   const videoId = nowPlaying?.videoId ?? null;
   if (session && session.videoId !== videoId) close();
-  if (!videoId || status !== 'playing') return;
+  // Fork, Connect: a song shown from another device is that device's play, not this tab's.
+  if (remotePlayer.active && session) close();
+  if (!videoId || status !== 'playing' || remotePlayer.active) return;
 
   if (!session) {
     if (opening === videoId || !VIDEO_ID.test(videoId)) return;

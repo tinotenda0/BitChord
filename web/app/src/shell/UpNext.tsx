@@ -108,7 +108,8 @@ export function UpNext() {
   const index = usePlayer((s) => s.index);
   const localAutoplay = usePlayer((s) => s.autoplay);
   // In a party AutoPlay is the party's setting (Autoplay.autoplayEnabledFor).
-  const inParty = useParty((s) => !!s.code);
+  // Fork: a jam's; Connect's output keeps its own AutoPlay.
+  const inParty = useParty((s) => !!s.code && s.kind === 'jam');
   const partyAutoplay = useParty((s) => s.playback.autoplayEnabled);
   const autoplay = inParty ? partyAutoplay : localAutoplay;
   const repeat = usePlayer((s) => s.repeat);

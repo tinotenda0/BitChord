@@ -43,16 +43,17 @@ var (
 	)
 	presenceLimiter = newIPRateLimiter(time.Minute, config.PresencePingsPerMinute, config.PresenceRateLimitMaxIPs)
 	upgrader = websocket.Upgrader{
-		// Answered only to a browser that offered it with its token (see
-		// parseSocketToken); a native client offers no subprotocol and gets none.
-		Subprotocols: []string{socketProtocol},
+		// Each answered only to a browser that offered it with its token, so the
+		// handshake completes without echoing the token-bearing protocol back: the
+		// fork's "bitchord" (Marble Music, tokenFromSubprotocol) and upstream's
+		// "bitchord.v1" (BitChord web, parseSocketToken). A native client offers no
+		// subprotocol and gets none. The merge had left these as two Subprotocols
+		// fields, which doesn't compile.
+		Subprotocols: []string{wsSubprotocol, socketProtocol},
 		CheckOrigin: func(r *http.Request) bool {
 			origin := r.Header.Get("Origin")
 			return origin == "" || config.IsAllowedOrigin(origin)
 		},
-		// Answered to a browser that offers it (see tokenFromSubprotocol), so the
-		// handshake completes without echoing the token-bearing protocol back.
-		Subprotocols: []string{wsSubprotocol},
 	}
 )
 

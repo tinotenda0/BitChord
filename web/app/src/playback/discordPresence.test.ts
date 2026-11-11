@@ -8,7 +8,8 @@ const player = create<{ nowPlaying: { videoId: string; title: string; artist: st
   () => ({ nowPlaying: null, status: 'idle', queue: [], index: 0, deck: 0 }),
 );
 
-vi.mock('@/state/player', () => ({ usePlayer: player, getAudio: () => audio }));
+vi.mock('@/state/player', () => ({
+  remotePlayer: { active: false }, usePlayer: player, getAudio: () => audio }));
 vi.mock('@/extension/bridge', () => ({
   getBridge: () => ({
     call: async (_: string, payload: { track: unknown }) => {

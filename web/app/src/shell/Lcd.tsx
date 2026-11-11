@@ -15,6 +15,7 @@ import { useHasVideo } from '@/state/video';
 import { albumPageFor, artistPageFor } from './nowPlayingLinks';
 import { MixWindowHighlight } from './NerdStats';
 import { useScrubber } from './useScrubber';
+import { usePlayingElsewhere } from './DevicesButton';
 
 // The title and each artist: plain until hovered, then underlined on their own.
 export const pageLink = 'cursor-pointer text-start hover:underline focus-visible:underline aria-busy:cursor-progress';
@@ -104,6 +105,8 @@ export function Lcd() {
     return entry && entry.videoId === s.nowPlaying?.videoId ? entry : null;
   });
   const video = useHasVideo(nowPlaying?.videoId);
+  // Fork, Connect: what's shown is playing on another of the account's devices.
+  const elsewhere = usePlayingElsewhere();
 
   if (!nowPlaying) {
     return (
@@ -169,6 +172,7 @@ export function Lcd() {
           <span className="truncate type-callout-medium text-key">{error}</span>
         ) : (
           <span className="truncate type-callout-medium text-secondary">
+            {elsewhere && <span className="text-key">On {elsewhere} · </span>}
             {artist ? <Credits videoId={videoId} line={artist} artists={track?.artists ?? []} /> : status === 'loading' ? 'Loading…' : ''}
           </span>
         )}

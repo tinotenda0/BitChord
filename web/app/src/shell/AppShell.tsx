@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect } from 'react';
-import { resumeSession } from '@/party/listenTogether';
+import { startListeningStats } from '@/marble/listening';
+import { resumeSession, startConnect } from '@/party/listenTogether';
 import { startPartySync } from '@/party/partySync';
 import { useDiscordPresence } from '@/playback/discordPresence';
 import { startHistoryReporting } from '@/playback/historyReporting';
@@ -30,10 +31,18 @@ export function AppShell() {
   useKeyboardShortcuts();
   useDiscordPresence();
   // Listen Together: pick a party back up after a reload, and keep the player in step with it.
+  // Fork: Connect (the account's own devices) signs in once a jam isn't holding the socket.
   useEffect(() => {
     resumeSession();
-    return startPartySync();
+    const stopSync = startPartySync();
+    const stopConnect = startConnect();
+    return () => {
+      stopConnect();
+      stopSync();
+    };
   }, []);
+  // Fork: listening stats to marble, while music plays in this tab.
+  useEffect(() => startListeningStats(), []);
   // Plays into the account's YouTube Music history (Settings › Share Listening Activity).
   useEffect(() => startHistoryReporting(), []);
   // Counts this tab in the "listening now" figure beside the phone and PC apps.

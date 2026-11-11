@@ -10,4 +10,6 @@ export const config = {
   androidAppUrl: import.meta.env.VITE_ANDROID_APP_URL || 'https://github.com/kushagrasinghx/BitChord/releases/latest',
   /** BitChord's Listen Together server. vite.config.ts refuses a production build without it. */
   partyServerUrl: import.meta.env.VITE_PARTY_SERVER_URL ?? '',
+  /** Fork: marble's gateway, for Connect's sign-in check and listening stats. */
+  marbleGatewayUrl: (import.meta.env.VITE_MARBLE_GATEWAY_URL || 'https://api.tinotenda.co').replace(/\/+$/, ''),
 } as const;

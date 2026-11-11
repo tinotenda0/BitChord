@@ -8,6 +8,7 @@ const audio = { currentTime: 0 };
 const player = create<{ nowPlaying: { videoId: string } | null; status: string }>()(() => ({ nowPlaying: null, status: 'idle' }));
 
 vi.mock('@/state/player', () => ({
+  remotePlayer: { active: false },
   usePlayer: player,
   getAudio: () => audio,
   onTrackEnded: (listener: () => void) => {

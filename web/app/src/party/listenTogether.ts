@@ -1,15 +1,18 @@
 import { create } from 'zustand';
 import { config } from '@/config';
 import { ytAuthSnapshot } from '@/extension/useYtAuth';
+import { marbleAccount, tokenLogin, useMarbleAccount } from '@/marble/account';
 import { ServerClock } from './clock';
 import { cleanCode, CODE_LENGTH, sanitizeServerUrl } from './invite';
 import {
+  deviceOf,
   EMPTY_PLAYBACK,
   EMPTY_QUEUE,
   memberOf,
   playbackOf,
   queueOf,
   snapshotOf,
+  type ConnectDevice,
   type JoinRequest,
   type PartyActivity,
   type PartyMember,
@@ -50,6 +53,12 @@ const UNREACHABLE = 'Couldn’t reach the party server.';
 export type Connection = 'offline' | 'connecting' | 'live';
 
 export interface PartyState {
+  /** Fork: "connect" while this is the account's own devices, "jam" for a party joined by code. */
+  kind: 'jam' | 'connect';
+  /** Fork, Connect: the account's devices the server remembers, connected or asleep. */
+  devices: ConnectDevice[];
+  /** Fork, Connect: why signing in to the account's devices last failed. */
+  connectError: string | null;
   code: string | null;
   you: PartyMember | null;
   members: PartyMember[];
@@ -70,6 +79,9 @@ export interface PartyState {
 }
 
 const IDLE: PartyState = {
+  kind: 'jam',
+  devices: [],
+  connectError: null,
   code: null,
   you: null,
   members: [],
@@ -190,11 +202,16 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
 function adoptMembership(base: string, membership: PartyMembership): string {
   token = membership.token;
   server = base;
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify({ code: membership.code, token, server }));
   clock.reset();
   const party = snapshotOf(membership.party);
+  // Fork: Connect isn't resumed from the tab's session; it signs in again, and the server
+  // recognises this browser by its device key.
+  if (party.kind === 'jam') sessionStorage.setItem(SESSION_KEY, JSON.stringify({ code: membership.code, token, server }));
+  else sessionStorage.removeItem(SESSION_KEY);
   useParty.setState({
     ...IDLE,
+    kind: party.kind,
+    devices: party.devices,
     code: membership.code,
     you: memberOf(membership.you),
     members: party.members,
@@ -210,7 +227,8 @@ function adoptMembership(base: string, membership: PartyMembership): string {
 }
 
 export async function createParty(options: { maxMembers?: number; autoplayEnabled: boolean }): Promise<string> {
-  if (useParty.getState().code) await leaveParty();
+  if (useParty.getState().kind === 'connect') leaveConnectForJam();
+  else if (useParty.getState().code) await leaveParty();
   const base = idleServer();
   try {
     const membership = await request<PartyMembership>(`${base}/api/parties`, {
@@ -242,8 +260,10 @@ export async function joinParty(rawCode: string, serverUrl?: string | null): Pro
       body: JSON.stringify(await identity()),
     });
     const previous = current.code && token && server ? { code: current.code, token, server } : null;
+    clearTimeout(connectRetry);
     disconnect();
-    if (previous) void releaseSlot(previous.server, previous.code, previous.token);
+    // Fork: the account's other devices then show this one as in a jam rather than gone.
+    if (previous) void releaseSlot(previous.server, previous.code, previous.token, current.kind === 'connect' ? 'jam' : undefined);
     return adoptMembership(base, membership);
   } catch (error) {
     useParty.setState({ error: messageOf(error) });
@@ -267,14 +287,15 @@ export async function previewParty(rawCode: string, serverUrl?: string | null): 
   }
 }
 
-function releaseSlot(base: string, code: string, held: string): Promise<void> {
-  return fetch(`${base}/api/parties/${code}/leave`, { method: 'POST', headers: { Authorization: `Bearer ${held}` } })
+function releaseSlot(base: string, code: string, held: string, reason?: string): Promise<void> {
+  const why = reason ? `?reason=${encodeURIComponent(reason)}` : '';
+  return fetch(`${base}/api/parties/${code}/leave${why}`, { method: 'POST', headers: { Authorization: `Bearer ${held}` } })
     .then(() => undefined)
     .catch(() => undefined);
 }
 
 export async function leaveParty(): Promise<void> {
-  const { code } = useParty.getState();
+  const { code, kind } = useParty.getState();
   const held = token;
   const base = server;
   disconnect();
@@ -284,6 +305,8 @@ export async function leaveParty(): Promise<void> {
   clock.reset();
   useParty.setState({ ...IDLE, activity: useParty.getState().activity });
   if (code && held && base) await releaseSlot(base, code, held);
+  // Fork: out of a jam, back to the account's own devices.
+  if (kind === 'jam') void signInConnect();
 }
 
 /** Picks a party back up after a reload, inside the server's grace period. */
@@ -303,6 +326,137 @@ export function resumeSession(): void {
 
 export function partyServer(): string | null {
   return server;
+}
+
+// ---- Connect (fork): this account's own devices -----------------------------------------
+//
+// A port of the fork's ListenTogether.signInConnect: the browser signs in with the marble
+// login and lands in the account's Connect party, where exactly one member, the output,
+// plays and the rest are remotes (partySync.ts decides which this tab is). A jam holds the
+// device's one socket, so Connect steps aside for it and signs in again after.
+
+const CONNECT_KEY = 'bitchord:connect-device-key';
+let connectRetry: ReturnType<typeof setTimeout> | undefined;
+let connectBackoff = 1000;
+let playingNow: () => boolean = () => false;
+
+/** A stable random key for this browser: the server knows it as the same device across reloads. */
+function connectDeviceKey(): string {
+  let key = localStorage.getItem(CONNECT_KEY);
+  if (!key || !/^[0-9a-f]{24}$/.test(key)) {
+    key = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('');
+    localStorage.setItem(CONNECT_KEY, key);
+  }
+  return key;
+}
+
+/** "Chrome on Windows": how this tab shows in the account's device list. */
+export function webDeviceName(): string {
+  const ua = navigator.userAgent;
+  const browser = /Edg\//.test(ua) ? 'Edge' : /Firefox\//.test(ua) ? 'Firefox' : /Chrome\//.test(ua) ? 'Chrome' : /Safari\//.test(ua) ? 'Safari' : 'Browser';
+  const os = /Windows/.test(ua) ? 'Windows' : /Mac OS X/.test(ua) ? 'Mac' : /Android/.test(ua) ? 'Android' : /CrOS/.test(ua) ? 'ChromeOS' : /Linux/.test(ua) ? 'Linux' : '';
+  return os ? `${browser} on ${os}` : browser;
+}
+
+/** Whether music is coming out of this tab: a sign-in after a server restart then comes back as the output. */
+export function setConnectPlaying(fn: () => boolean): void {
+  playingNow = fn;
+}
+
+const inJam = () => {
+  const state = useParty.getState();
+  return !!state.code && state.kind === 'jam';
+};
+
+/** Signs this browser in to the account's Connect party; retries on its own until it's in. */
+export async function signInConnect(): Promise<void> {
+  clearTimeout(connectRetry);
+  const account = marbleAccount();
+  if (!account || !DEFAULT_SERVER || inJam()) return;
+  const { user, token: gatewayToken, salt } = tokenLogin(account);
+  try {
+    const membership = await request<PartyMembership>(`${DEFAULT_SERVER}/api/connect`, {
+      method: 'POST',
+      body: JSON.stringify({
+        gatewayUser: user,
+        gatewayToken,
+        gatewaySalt: salt,
+        deviceKey: connectDeviceKey(),
+        app: 'web',
+        deviceName: webDeviceName(),
+        displayName: account.username,
+        playing: playingNow(),
+      }),
+    });
+    // Signed out, or into a jam, while that was in flight.
+    if (!marbleAccount() || inJam()) {
+      void releaseSlot(DEFAULT_SERVER, membership.code, membership.token);
+      return;
+    }
+    connectBackoff = 1000;
+    adoptMembership(DEFAULT_SERVER, membership);
+  } catch (error) {
+    if (!marbleAccount() || inJam()) return;
+    const code = error instanceof PartyError ? error.code : 'unreachable';
+    useParty.setState({ connectError: messageOf(error) });
+    // Not a blip: no Connect on this server, or a login it refuses. Asked again only now and then.
+    const wait = code === 'bad_login' || code === 'connect_disabled' ? 30 * 60_000 : connectBackoff;
+    connectBackoff = Math.min(connectBackoff * 2, 30_000);
+    connectRetry = setTimeout(() => void signInConnect(), wait);
+  }
+}
+
+/** Steps out of the account's party so a jam can have the socket; partySync then follows the jam. */
+function leaveConnectForJam(): void {
+  const { code } = useParty.getState();
+  const held = token;
+  const base = server;
+  clearTimeout(connectRetry);
+  disconnect();
+  token = null;
+  server = null;
+  clock.reset();
+  useParty.setState({ ...IDLE, activity: useParty.getState().activity });
+  if (code && held && base) void releaseSlot(base, code, held, 'jam');
+}
+
+/** Signed out of marble: off the account's party, if that's where this tab is. */
+function stopConnect(): void {
+  clearTimeout(connectRetry);
+  const state = useParty.getState();
+  if (state.kind !== 'connect' || !state.code) return;
+  const held = token;
+  const base = server;
+  disconnect();
+  token = null;
+  server = null;
+  clock.reset();
+  useParty.setState({ ...IDLE, activity: state.activity });
+  if (held && base && state.code) void releaseSlot(base, state.code, held);
+}
+
+/** Mounted once, in the shell: signs in now, and again whenever the marble account changes. */
+export function startConnect(): () => void {
+  void signInConnect();
+  const off = useMarbleAccount.subscribe((now, before) => {
+    if (now.account === before.account) return;
+    if (now.account) void signInConnect();
+    else stopConnect();
+  });
+  return () => {
+    off();
+    clearTimeout(connectRetry);
+  };
+}
+
+/** The membership is gone on the server's side: a jam is over, Connect signs in again. */
+function membershipLost(message: string | null): void {
+  if (useParty.getState().kind === 'connect') {
+    clearTimeout(connectRetry);
+    connectRetry = setTimeout(() => void signInConnect(), 500);
+    return;
+  }
+  void leaveParty().then(() => message && useParty.setState({ error: message }));
 }
 
 // ---- Recent kicks (a door that stays shut on this device for a day) ------------------------
@@ -344,8 +498,8 @@ export const party = {
   seek: (positionMs: number) => control('seek', { positionMs: Math.round(positionMs) }),
   next: () => control('next'),
   previous: () => control('previous'),
-  setTrack: (track: PartyTrack, positionMs = 0, isPlaying = true) =>
-    control('setTrack', { track, positionMs: Math.round(positionMs), isPlaying }),
+  setTrack: (track: PartyTrack, positionMs = 0, isPlaying = true, queueIndex?: number) =>
+    control('setTrack', { track, positionMs: Math.round(positionMs), isPlaying, ...(queueIndex !== undefined && { queueIndex }) }),
   setQueue: (queue: PartyTrack[], index: number) => control('setQueue', { queue, queueIndex: index }),
   queueAdd: (tracks: PartyTrack[], playNext = false) => control('queueAdd', { tracks, playNext }),
   queueRemove: (videoId: string) => control('queueRemove', { videoId }),
@@ -356,7 +510,23 @@ export const party = {
   kick: (memberId: string) => control('kick', { memberId }),
   setAutoplay: (enabled: boolean) => control('setAutoplay', { enabled }),
   setHostOnlyControl: (enabled: boolean) => control('setHostOnlyControl', { enabled }),
+  // Fork, Connect.
+  /** Moves the account's playback onto another of its devices (or this one: "play here"). */
+  transfer: (memberId: string) => control('transfer', { memberId }),
+  /** Moves it onto a device that's asleep, by waking it. */
+  wake: (deviceId: string) => control('wake', { deviceId }),
+  /** Asks the output to play at [volume], 0 to 1. */
+  setVolume: (volume: number) => control('setVolume', { volume }),
+  /** The output saying what its volume really is, and that the others may change it. */
+  volumeState: (volume: number) => control('volumeState', { volume, control: true, steps: 100 }),
 };
+
+/** Fork, Connect: where the output really is, for its measured reports; null when it isn't playing. */
+export type MeasuredReading = { videoId: string; positionMs: number; durationMs: number } | null;
+let measuredReader: (() => MeasuredReading) | null = null;
+export function setMeasuredReader(read: (() => MeasuredReading) | null): void {
+  measuredReader = read;
+}
 
 // ---- The playhead ------------------------------------------------------------------
 
@@ -460,8 +630,7 @@ async function checkMembership(): Promise<void> {
     const response = await fetch(`${server}/api/parties/${code}`, { headers: { Authorization: `Bearer ${token}` } });
     if (response.status === 401 || response.status === 404) {
       const why = await errorOf(response);
-      await leaveParty();
-      useParty.setState({ error: why.status === 404 ? 'That party has ended.' : why.message });
+      membershipLost(why.status === 404 ? 'That party has ended.' : why.message);
     }
   } catch {
     // Unreachable: keep trying.
@@ -473,6 +642,21 @@ function ping(): void {
 }
 
 function report(): void {
+  if (useParty.getState().kind === 'connect') {
+    const reading = measuredReader?.();
+    const atMs = clock.serverNowMs();
+    if (!reading || atMs === null) return;
+    send({
+      type: 'report',
+      measured: true,
+      videoId: reading.videoId,
+      positionMs: Math.round(reading.positionMs),
+      atMs: Math.round(atMs),
+      isPlaying: true,
+      ...(reading.durationMs > 0 && { durationMs: Math.round(reading.durationMs) }),
+    });
+    return;
+  }
   const position = partyPositionMs();
   if (position === null) return;
   send({ type: 'report', positionMs: Math.round(position), isPlaying: useParty.getState().playback.isPlaying });
@@ -496,6 +680,9 @@ function onFrame(text: string): void {
       if (!frame.party) return;
       const party = snapshotOf(frame.party as never);
       useParty.setState({
+        kind: party.kind,
+        devices: party.devices,
+        connectError: null,
         code: party.code || state.code,
         you: frame.you ? memberOf(frame.you as never) : state.you,
         members: party.members,
@@ -539,7 +726,9 @@ function onFrame(text: string): void {
       const hostOnlyControl = typeof frame.hostOnlyControl === 'boolean' ? frame.hostOnlyControl : state.hostOnlyControl;
       // The only place a promotion is announced.
       const you = (state.you && members.find((m) => m.memberId === state.you!.memberId)) ?? state.you;
-      useParty.setState({ members, maxMembers, hostOnlyControl, you });
+      // Fork, Connect: the device list rides along with the members.
+      const devices = Array.isArray(frame.devices) ? (frame.devices as unknown[]).map((d) => deviceOf(d as never)) : state.devices;
+      useParty.setState({ members, maxMembers, hostOnlyControl, you, devices });
       break;
     }
     case 'activity': {
@@ -553,10 +742,15 @@ function onFrame(text: string): void {
       const reason = String(frame.error ?? '');
       useParty.setState({ error: typeof frame.message === 'string' ? frame.message : reason });
       // Terminal: the party no longer knows this device.
-      if (reason === 'bad_token' || reason === 'no_such_party') void leaveParty();
+      if (reason === 'bad_token' || reason === 'no_such_party') membershipLost(null);
       break;
     }
     case 'bye': {
+      // Fork: Connect has no host to kick anyone; a bye there is the server letting go.
+      if (state.kind === 'connect') {
+        membershipLost(null);
+        break;
+      }
       if (frame.reason === 'kicked' && state.code) recordKick(state.code);
       const kicked = frame.reason === 'kicked';
       void leaveParty().then(() => kicked && useParty.setState({ error: 'The host removed you from the party.' }));

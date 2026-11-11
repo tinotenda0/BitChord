@@ -160,6 +160,8 @@ export function getAudio(): HTMLAudioElement | null {
  * underneath). The lyrics and the seek bars read this.
  */
 export function getPlayhead(): { sec: number; paused: boolean } | null {
+  const remote = getRemoteTimeline();
+  if (remote) return { sec: remote.sec, paused: remote.paused };
   const audio = getAudio();
   const { mixing, nowPlaying } = usePlayer.getState();
   if (mixing && graph && nowPlaying) {
@@ -393,6 +395,26 @@ function hintOf(track: Track): NowPlaying {
 // [partyPlayer] instead, which reports nothing, so a correction can never
 // come back around as a control.
 
+/**
+ * Fork, Connect: while another of the account's devices is the output, this tab
+ * is its remote. Every user action goes to that device instead of the player
+ * here, and the store shows what it plays (remotePlayer below).
+ */
+export interface RemoteControl {
+  playList(tracks: Track[], startIndex: number): void;
+  add(tracks: Track[], next: boolean): void;
+  /** Plays the queue row at [index] (the store's queue mirrors the remote's while this lasts). */
+  jump(index: number): void;
+  remove(index: number): void;
+  move(from: number, to: number): void;
+  clearUpNext(): void;
+  next(): void;
+  previous(): void;
+  setPlaying(playing: boolean): void;
+  seek(seconds: number): void;
+  volume(volume: number): void;
+}
+
 export interface PartyHooks {
   /** The user did something to playback, or the queue moved on by itself. */
   onIntent(): void;
@@ -402,6 +424,8 @@ export interface PartyHooks {
   onLockedTransport(playing: boolean): boolean;
   /** In a party, AutoPlay is the party's: one elected member tops up the shared queue. */
   inParty(): boolean;
+  /** Fork, Connect: the device this tab is a remote for, or null while it plays for itself. */
+  remote(): RemoteControl | null;
 }
 
 let partyHooks: PartyHooks | null = null;
@@ -409,6 +433,7 @@ export function setPartyHooks(hooks: PartyHooks | null): void {
   partyHooks = hooks;
 }
 const intent = () => partyHooks?.onIntent();
+const remote = () => partyHooks?.remote() ?? null;
 
 // ---- Store ------------------------------------------------------------------------
 
@@ -430,6 +455,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
 
   playTracks(tracks, startIndex, source) {
     if (!tracks.length) return;
+    const r = remote();
+    if (r) return r.playList(tracks, startIndex);
     const { queue, index, shuffle } = get();
     const built = buildContextQueue(queue, index, tracks, startIndex, source);
     if (shuffle) {
@@ -445,6 +472,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   playTrack(track, source) {
+    const r = remote();
+    if (r) return r.playList([track], 0);
     const { queue, index } = get();
     canonical = null;
     set({ queue: buildOneOffQueue(queue, index, track, source) });
@@ -470,11 +499,15 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   playNext(tracks, source = null) {
+    const r = remote();
+    if (r) return r.add(tracks, true);
     insertUser(tracks, source, true);
     intent();
   },
 
   addToQueue(tracks, source = null) {
+    const r = remote();
+    if (r) return r.add(tracks, false);
     insertUser(tracks, source, false);
     intent();
   },
@@ -482,6 +515,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   jumpTo(target) {
     const { queue, index } = get();
     if (target === index) return;
+    const r = remote();
+    if (r) return r.jump(target);
     const jumped = applyJump(queue, index, target);
     if (!jumped) return;
     set({ queue: jumped.timeline });
@@ -492,6 +527,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   removeAt(at) {
     const { queue, index } = get();
     if (at === index || at < 0 || at >= queue.length) return;
+    const r = remote();
+    if (r) return r.remove(at);
     set({ queue: queue.filter((_, i) => i !== at), index: at < index ? index - 1 : index });
     void refillAutoplay();
     intent();
@@ -500,6 +537,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   move(from, to) {
     const { queue, index } = get();
     if (from <= index || to <= index || from >= queue.length || to >= queue.length || from === to) return;
+    const r = remote();
+    if (r) return r.move(from, to);
     const next = [...queue];
     const [entry] = next.splice(from, 1);
     next.splice(to, 0, entry!);
@@ -508,6 +547,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   clearUpNext() {
+    const r = remote();
+    if (r) return r.clearUpNext();
     const { queue, index } = get();
     const drop = new Set(upcomingUserQueueIndices(queue.map((e) => e.tier), index));
     set({ queue: queue.filter((_, i) => !drop.has(i)) });
@@ -515,10 +556,14 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   next() {
+    const r = remote();
+    if (r) return r.next();
     void advance(false).then(intent);
   },
 
   previous() {
+    const r = remote();
+    if (r) return r.previous();
     const { index, queue, repeat } = get();
     const audio = getAudio();
     if (audio && audio.currentTime > BACK_RESTARTS_AFTER_SEC) return get().seek(0);
@@ -529,6 +574,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   togglePlay() {
+    const r = remote();
+    if (r) return r.setPlaying(get().status !== 'playing' && get().status !== 'buffering');
     // A loop mix holds both elements paused: settle it onto a playing song first.
     if (graph?.dj.loopMixing) cancelCrossfade();
     const audio = getAudio();
@@ -539,9 +586,10 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
     if (resuming) void graph?.ctx.resume();
     // A listener in a party the host has locked: the press moves this device alone.
     if (partyHooks?.onLockedTransport(resuming)) return;
-    if (!audio || status === 'error') {
-      // A stopped or failed track starts again from where it was.
-      void startAt(index, { startSec: audio?.currentTime ?? 0 });
+    if (!audio || status === 'error' || staleAudio) {
+      // A stopped or failed track starts again from where it was. Fork: so does one
+      // that was last shown from another device (the element holds an older song).
+      void startAt(index, { startSec: staleAudio ? staleAudioSec : (audio?.currentTime ?? 0) });
     } else if (audio.paused) {
       // In a party, a resume waits for the instant the server schedules for everyone.
       if (!partyHooks?.shouldDeferPlay()) void audio.play().catch((e: unknown) => trackLog.w(`play() refused: ${String(e)}`));
@@ -553,6 +601,8 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   seek(seconds) {
+    const r = remote();
+    if (r) return r.seek(seconds);
     const audio = getAudio();
     if (!audio) return;
     cancelCrossfade();
@@ -602,6 +652,13 @@ export const usePlayer = create<PlayerState>()((set, get) => ({
   },
 
   setVolume(volume) {
+    const r = remote();
+    if (r) {
+      // The other device's volume, shown here; this tab's own is left as it was.
+      const level = Math.min(1, Math.max(0, volume));
+      set({ volume: level, muted: false });
+      return r.volume(level);
+    }
     set({ volume: Math.min(1, Math.max(0, volume)), muted: false });
     applyVolumes();
     saveSettings(get());
@@ -673,6 +730,7 @@ async function startAt(at: number, { startSec = 0, auto = false, autoplay = true
   if (!entry) return;
   cancelCrossfade();
   const token = ++loadToken;
+  staleAudio = false;
 
   if (!extensionReady()) {
     usePlayer.setState({
@@ -793,6 +851,8 @@ function refillAutoplay(force = false, anySeed = false): Promise<void> {
   if (!autoplay || repeat !== 'off' || index < 0) return Promise.resolve();
   // A party's AutoPlay goes through the server (party/partySync.ts), never straight onto this queue.
   if (partyHooks?.inParty()) return Promise.resolve();
+  // Fork: nor while this tab shows another device; that device keeps its own queue going.
+  if (remoteHead) return Promise.resolve();
   const needed = MAX_QUEUED_AUTOPLAY - queue.slice(index + 1).filter((e) => e.tier === 'autoplay').length;
   if (needed <= 0) return Promise.resolve();
   // Seeded from the playing track (loadAutoplayForCurrentTrack), not the queue's tail.
@@ -994,7 +1054,7 @@ function bindElement(deck: Deck, n: number) {
   const element = deck.audio;
   const inFront = () => active === n;
   const set = (status: PlayerStatus) => {
-    if (!inFront() || holding) return;
+    if (!inFront() || holding || remoteHead) return;
     if (usePlayer.getState().status === 'error' && status !== 'playing') return;
     usePlayer.setState({ status });
   };
@@ -1090,6 +1150,77 @@ function updatePositionState() {
     // Position past duration during a seek; the next event corrects it.
   }
 }
+
+// ---- Fork, Connect: showing another device (party/partySync.ts) -----------------------------
+
+/** What the device this tab is a remote for plays, as the store shows it. */
+export interface RemoteView {
+  tracks: Track[];
+  tiers: ('user' | 'autoplay')[];
+  index: number;
+  isPlaying: boolean;
+  /** Where its playhead is now, in ms, as the party server's clock puts it. */
+  positionMs: number;
+  durationMs: number;
+  volume: number | null;
+}
+
+let remoteHead: { positionMs: number; at: number; playing: boolean; durationMs: number } | null = null;
+/** The element holds a song from before this tab showed another device; play reloads instead. */
+let staleAudio = false;
+let staleAudioSec = 0;
+
+/** The other device's playhead while this tab shows it, else null. */
+export function getRemoteTimeline(): { sec: number; durationSec: number; paused: boolean } | null {
+  if (!remoteHead) return null;
+  const elapsed = remoteHead.playing ? performance.now() - remoteHead.at : 0;
+  const ms = remoteHead.positionMs + elapsed;
+  const capped = remoteHead.durationMs > 0 ? Math.min(ms, remoteHead.durationMs) : ms;
+  return { sec: capped / 1000, durationSec: remoteHead.durationMs / 1000, paused: !remoteHead.playing };
+}
+
+const REMOTE_SOURCE: QueueSource = { title: 'Connect', type: 'queue' };
+
+export const remotePlayer = {
+  /** Shows [view]; nothing plays here. */
+  mirror(view: RemoteView): void {
+    const audio = getAudio();
+    if (audio && !audio.paused) {
+      cancelCrossfade();
+      audio.pause();
+    }
+    if (audio && !remoteHead) staleAudio = true;
+    const state = usePlayer.getState();
+    const same =
+      state.queue.length === view.tracks.length && state.queue.every((e, i) => e.track.videoId === view.tracks[i]?.videoId);
+    const entry = view.tracks[view.index];
+    const entering = remoteHead === null;
+    remoteHead = { positionMs: view.positionMs, at: performance.now(), playing: view.isPlaying, durationMs: view.durationMs };
+    usePlayer.setState({
+      ...(same ? {} : { queue: view.tracks.map((t, i) => asEntry(t, view.tiers[i] ?? 'user', REMOTE_SOURCE)) }),
+      index: entry ? view.index : -1,
+      nowPlaying: entry ? { ...hintOf(entry), durationSec: view.durationMs > 0 ? view.durationMs / 1000 : hintOf(entry).durationSec } : null,
+      status: entry ? (view.isPlaying ? 'playing' : 'paused') : 'idle',
+      error: null,
+      ...(view.volume !== null && { volume: view.volume, muted: false }),
+      // The seek bar and lyrics re-read their clock when this changes: on the way in, not every tick.
+      ...(entering && { deck: state.deck + 1 }),
+    });
+  },
+  /** Back to this tab's own player, paused on what the other device was playing. */
+  release(): void {
+    if (!remoteHead) return;
+    staleAudioSec = (getRemoteTimeline()?.sec ?? 0);
+    remoteHead = null;
+    staleAudio = true;
+    const { volume, muted } = loadSettings();
+    usePlayer.setState((s) => ({ status: s.nowPlaying ? 'paused' : 'idle', volume, muted, deck: s.deck + 1 }));
+    applyVolumes();
+  },
+  get active(): boolean {
+    return remoteHead !== null;
+  },
+};
 
 // ---- The party's door (party/partySync.ts): moves the player, reports nothing ----------
 

@@ -16,6 +16,7 @@ import { TrackMenu } from '@/components/music/TrackMenu';
 import { usePlayer } from '@/state/player';
 import { useUi } from '@/state/ui';
 import { Lcd } from './Lcd';
+import { DevicesButton } from './DevicesButton';
 import { fadeForVolume, VolumeControl } from './VolumeControl';
 
 const control = 'grid place-items-center rounded-[6px] disabled:opacity-40';
@@ -106,6 +107,8 @@ export function PlayerBar() {
           >
             <UpNextIcon size={18} />
           </button>
+          {/* Fork, Connect: where the account's music plays. */}
+          <DevicesButton className={fading} />
           <VolumeControl open={volumeOpen} onOpen={() => setVolumeOpen(true)} className={action} />
         </div>
       </div>

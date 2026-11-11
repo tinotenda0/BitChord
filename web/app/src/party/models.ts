@@ -25,6 +25,23 @@ export interface PartyMember {
   connected: boolean;
   joinedAtMs: number;
   lastSeenMs: number;
+  /** Fork: "speaker" plays, "remote" only drives. In Connect, the one speaker is the output. */
+  role: 'speaker' | 'remote';
+  /** Fork, Connect: the device behind the member, and the app on it ("android", "tv", "web"). */
+  deviceKey: string | null;
+  app: string | null;
+  deviceName: string | null;
+}
+
+/** Fork, Connect: one of the account's devices the server remembers, connected or asleep. */
+export interface ConnectDevice {
+  deviceId: string;
+  deviceKey: string;
+  app: string;
+  deviceName: string;
+  wakeable: boolean;
+  connected: boolean;
+  lastSeenMs: number;
 }
 
 /**
@@ -48,6 +65,12 @@ export interface PartyPlayback {
   startedByName: string | null;
   autoplayEnabled: boolean;
   updatedAtMs: number;
+  /** Fork, Connect: the output's volume (0-1) and whether other devices may change it. */
+  volume: number | null;
+  volumeControl: boolean;
+  /** Fork, Connect: the volume a remote asked for, and a count of those requests. */
+  volumeTarget: number | null;
+  volumeReqSeq: number;
 }
 
 export interface PartyQueue {
@@ -57,6 +80,10 @@ export interface PartyQueue {
 }
 
 export interface PartySnapshot {
+  /** Fork: "connect" for an account's own devices, "jam" for a party joined by code. */
+  kind: 'jam' | 'connect';
+  /** Fork, Connect: the account's remembered devices. */
+  devices: ConnectDevice[];
   code: string;
   createdAtMs: number;
   maxMembers: number;
@@ -116,6 +143,10 @@ export const EMPTY_PLAYBACK: PartyPlayback = {
   startedByName: null,
   autoplayEnabled: false,
   updatedAtMs: 0,
+  volume: null,
+  volumeControl: false,
+  volumeTarget: null,
+  volumeReqSeq: 0,
 };
 
 export const EMPTY_QUEUE: PartyQueue = { seq: 0, index: -1, items: [] };
@@ -150,11 +181,29 @@ export function memberOf(raw: Partial<PartyMember>): PartyMember {
     connected: raw.connected ?? false,
     joinedAtMs: raw.joinedAtMs ?? 0,
     lastSeenMs: raw.lastSeenMs ?? 0,
+    role: raw.role === 'remote' ? 'remote' : 'speaker',
+    deviceKey: raw.deviceKey ?? null,
+    app: raw.app ?? null,
+    deviceName: raw.deviceName ?? null,
+  };
+}
+
+export function deviceOf(raw: Partial<ConnectDevice>): ConnectDevice {
+  return {
+    deviceId: raw.deviceId ?? '',
+    deviceKey: raw.deviceKey ?? '',
+    app: raw.app ?? '',
+    deviceName: raw.deviceName ?? '',
+    wakeable: raw.wakeable ?? false,
+    connected: raw.connected ?? false,
+    lastSeenMs: raw.lastSeenMs ?? 0,
   };
 }
 
 export function snapshotOf(raw: Partial<PartySnapshot>): PartySnapshot {
   return {
+    kind: raw.kind === 'connect' ? 'connect' : 'jam',
+    devices: (raw.devices ?? []).map(deviceOf),
     code: raw.code ?? '',
     createdAtMs: raw.createdAtMs ?? 0,
     maxMembers: raw.maxMembers ?? 5,

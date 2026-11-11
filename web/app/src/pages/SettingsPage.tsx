@@ -13,6 +13,7 @@ import { Select } from '@/components/Select';
 import { AUTOMIX_BARS } from '@/playback/automix/choices';
 import { CROSSFADE_CHOICES, usePlayer } from '@/state/player';
 import { AppleMusicIntegration, AppleMusicToggles, CanvasToggle, DiscordIntegration, LyricSourcesAccess, SpotifyIntegration, Toggle } from './IntegrationSettings';
+import { MarbleSettings } from './MarbleSettings';
 import { settingsUi } from './settingsStyles';
 
 const LyricsSettings = lazy(() => import('@/shell/LyricsSettings').then((m) => ({ default: m.LyricsSettings })));
@@ -117,6 +118,10 @@ export default function SettingsPage() {
           <CanvasToggle />
         </section>
 
+        {/* Fork: marble, for Connect and listening stats. */}
+        <h2 className={settingsUi.sectionHeader}>Marble</h2>
+        <MarbleSettings />
+
         <h2 className={settingsUi.sectionHeader}>Apple Music</h2>
         <section className={settingsUi.group}>
           <div className={settingsUi.integration}>
@@ -134,7 +139,7 @@ export default function SettingsPage() {
             to="/settings/listen-together"
             icon={<Glyph Icon={Users} color="#fa2d48" />}
             title="Listen Together"
-            value={party.code ? `In party ${party.code}` : 'Listen in sync with friends'}
+            value={party.code && party.kind === 'jam' ? `In party ${party.code}` : 'Listen in sync with friends'}
           />
         </section>
 

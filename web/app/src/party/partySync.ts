@@ -1,8 +1,20 @@
 import type { Track } from '@/data/music/types';
 import type { QueueTier } from '@/playback/queue/timeline';
-import { getAudio, partyPlayer, setPartyHooks, usePlayer } from '@/state/player';
-import { controlsLocked, msUntilStart, party, partyPositionMs, useParty, type PartyState } from './listenTogether';
+import { getAudio, getPlayhead, partyPlayer, remotePlayer, setPartyHooks, usePlayer, type RemoteControl } from '@/state/player';
+import {
+  controlsLocked,
+  msUntilStart,
+  party,
+  partyPositionMs,
+  setConnectPlaying,
+  setMeasuredReader,
+  useParty,
+  type PartyState,
+} from './listenTogether';
+import { connectRole, outputOf, type ConnectRole } from './connectRole';
 import type { PartyTrack } from './models';
+
+export { connectRole, outputOf, type ConnectRole } from './connectRole';
 import { autoplaySupplierId, detectSingleMove, partyQueueIndexOf, partyUpcomingAfter } from './queueReading';
 
 /**
@@ -39,6 +51,21 @@ const MAX_UPCOMING = 25;
 /** Autoplay.MAX_QUEUED_AUTOPLAY. */
 const MAX_QUEUED_AUTOPLAY = 10;
 const QUEUE_ECHO_TIMEOUT_MS = 5_000;
+/** Fork, Connect: a playlist's worth may follow the playing track (JAM_CONNECT_MAX_UPCOMING). */
+const CONNECT_MAX_UPCOMING = 200;
+/** Fork, Connect: how much of what already played the output shares. */
+const CONNECT_HISTORY = 25;
+
+// ---- Connect (fork): which of the account's devices this tab is ------------------------
+//
+// In a Connect party exactly one member, the output, plays; it is the party's clock and
+// everything below that follows a party applies to it. Every other device is a remote for
+// it while it's connected, and shows and drives it instead of playing (remotePlayer). With
+// no output, or the output away, a device plays on its own, and pressing play there makes
+// it the output (PartySync.kt's publish, fork).
+
+/** A jam, where every member plays in time; Connect is handled apart. */
+const inJam = (state: PartyState = useParty.getState()) => !!state.code && state.kind === 'jam';
 
 // ---- Tracks across the boundary ----------------------------------------------------
 
@@ -114,6 +141,7 @@ const setAwaiting = (value: boolean): void => {
 function onIntent(): void {
   const state = useParty.getState();
   if (!state.code || controlsLocked(state)) return;
+  if (connectRole(state) === 'remote') return;
   reconcileQuietUntil = performance.now() + INTENT_QUIET_MS;
   // Nothing published yet: no seq to wait for, and someone else's control mustn't clear the window.
   awaitPlaybackSeq = Number.MAX_SAFE_INTEGER;
@@ -125,6 +153,7 @@ function onIntent(): void {
 function publish(): void {
   const state = useParty.getState();
   if (!state.code) return;
+  if (state.kind === 'connect') return publishConnect(state);
   const { queue, index } = usePlayer.getState();
   const entry = current();
   if (!entry) return;
@@ -192,9 +221,65 @@ function publish(): void {
   if (!playbackControls && !queueControls) reconcileQuietUntil = 0;
 }
 
+/**
+ * Fork, Connect: the output (or a device about to become it) publishing what its listener did.
+ * The whole running order goes, the album or playlist included, so the account's other devices
+ * show the same Up Next the phone does.
+ */
+function publishConnect(state: PartyState): void {
+  const role = connectRole(state);
+  if (role === 'remote' || role === 'none') return;
+  const { queue, index } = usePlayer.getState();
+  const entry = current();
+  if (!entry) return;
+  // Pressing play here while another device isn't playing makes this one the output. Sent ahead
+  // of the state it's about, on the one ordered socket, so the party takes this song as the output's.
+  const me = state.you?.memberId;
+  let playbackControls = 0;
+  let queueControls = 0;
+  if (role === 'solo' && me) {
+    party.transfer(me);
+    playbackControls++;
+  }
+  const audio = getAudio();
+  const track = toPartyTrack(entry.track, entry.tier, audio && Number.isFinite(audio.duration) ? audio.duration * 1000 : 0);
+  const position = positionMs();
+  const wantsPlaying = playWhenReady();
+  const from = Math.max(0, index - CONNECT_HISTORY);
+  const window = queue.slice(from, index + 1 + CONNECT_MAX_UPCOMING);
+  const windowIndex = index - from;
+  const ids = window.map((e) => e.track.videoId);
+  const partyIds = state.queue.items.map((t) => t.videoId);
+  const basePlayback = state.playback.seq;
+  const baseQueue = state.queue.seq;
+  if (ids.length !== partyIds.length || ids.some((id, i) => id !== partyIds[i])) {
+    party.setQueue(window.map((e) => toPartyTrack(e.track, e.tier)), windowIndex);
+    queueControls++;
+  }
+  if (role === 'solo' || state.playback.track?.videoId !== track.videoId) {
+    party.setTrack(track, position, wantsPlaying, windowIndex);
+    playbackControls++;
+  } else if (state.playback.isPlaying !== wantsPlaying) {
+    if (wantsPlaying) party.play(position);
+    else party.pause(position);
+    playbackControls++;
+  } else {
+    const partyPosition = partyPositionMs();
+    if (partyPosition === null || Math.abs(position - partyPosition) > SEEK_REPORT_FLOOR_MS) {
+      party.seek(position);
+      playbackControls++;
+    }
+  }
+  awaitPlaybackSeq = basePlayback + playbackControls;
+  awaitQueueSeq = baseQueue + queueControls;
+  if (!playbackControls && !queueControls) reconcileQuietUntil = 0;
+}
+
 /** A play to hold back for the party's scheduled instant; partySync starts it. */
 function shouldDeferPlay(): boolean {
   const state = useParty.getState();
+  // Fork: Connect's output plays at once; only a jam schedules a start for everyone.
+  if (!inJam(state)) return false;
   if (!state.code || state.connection !== 'live' || !state.clockSynced) return false;
   if (playWhenReady()) return false;
   setAwaiting(true);
@@ -229,6 +314,22 @@ function onLockedTransport(playing: boolean): boolean {
 
 function reconcile(): void {
   const state = useParty.getState();
+  const role = connectRole(state);
+  if (role === 'remote') return mirrorOutput(state);
+  // Fork: a remote that has just become the output (Play here) loads the party's song itself:
+  // the store only showed it, and the element still holds whatever played here before.
+  const wasRemote = remotePlayer.active;
+  if (wasRemote) remotePlayer.release();
+  if (role !== 'none') reconcileVolume(state, role);
+  if (role === 'output' && wasRemote && state.playback.track) {
+    reconcileQuietUntil = 0;
+    return load(state);
+  }
+  if (role === 'solo') {
+    loadingVideoId = null;
+    setAwaiting(false);
+    return;
+  }
   if (!state.code) {
     loadingVideoId = null;
     locallyPaused = false;
@@ -317,6 +418,99 @@ function reconcile(): void {
   partyPlayer.seekTo(want / 1000);
 }
 
+/** Fork, Connect: this tab as a remote, showing what the output plays. */
+let mirroredFromQueue = false;
+function mirrorOutput(state: PartyState): void {
+  const track = state.playback.track;
+  loadingVideoId = null;
+  setAwaiting(false);
+  if (!track) {
+    mirroredFromQueue = false;
+    remotePlayer.mirror({ tracks: [], tiers: [], index: -1, isPlaying: false, positionMs: 0, durationMs: 0, volume: state.playback.volume });
+    return;
+  }
+  const at = partyQueueIndexOf(state.queue, state.playback, track.videoId);
+  mirroredFromQueue = at >= 0;
+  const items = at >= 0 ? state.queue.items : [track];
+  remotePlayer.mirror({
+    tracks: items.map(fromPartyTrack),
+    tiers: items.map(tierOf),
+    index: Math.max(0, at),
+    isPlaying: state.playback.isPlaying,
+    positionMs: partyPositionMs() ?? state.playback.positionMs,
+    durationMs: track.durationMs ?? 0,
+    volume: state.playback.volume,
+  });
+}
+
+/** Fork, Connect: what a remote's buttons do; the store hands every action here while there's an output elsewhere. */
+const remoteControl: RemoteControl = {
+  playList(tracks, startIndex) {
+    const items = tracks.slice(0, startIndex + 1 + CONNECT_MAX_UPCOMING).map((t) => toPartyTrack(t, 'user'));
+    const at = Math.min(startIndex, items.length - 1);
+    if (at < 0) return;
+    party.setQueue(items, at);
+    party.setTrack(items[at]!, 0, true, at);
+  },
+  add(tracks, next) {
+    party.queueAdd(tracks.map((t) => toPartyTrack(t, 'user')), next);
+  },
+  jump(index) {
+    const track = mirroredFromQueue ? useParty.getState().queue.items[index] : undefined;
+    if (track) party.setTrack(track, 0, true, index);
+  },
+  remove(index) {
+    const track = mirroredFromQueue ? useParty.getState().queue.items[index] : undefined;
+    if (track) party.queueRemove(track.videoId);
+  },
+  move(from, to) {
+    const track = mirroredFromQueue ? useParty.getState().queue.items[from] : undefined;
+    if (track) party.queueMove(from, to, track.videoId);
+  },
+  clearUpNext: () => party.queueClear(),
+  next: () => party.next(),
+  previous: () => party.previous(),
+  setPlaying: (playing) => (playing ? party.play() : party.pause()),
+  seek: (seconds) => party.seek(seconds * 1000),
+  volume: (volume) => party.setVolume(volume),
+};
+
+/**
+ * Fork, Connect: the output's volume. It says what it is (on becoming the output and when its
+ * listener turns it), and takes a level a remote asks for: each request counted once.
+ */
+let volumeAnnouncedFor: string | null = null;
+let lastVolumeReq = -1;
+let lastAnnouncedVolume = -1;
+function reconcileVolume(state: PartyState, role: ConnectRole): void {
+  if (role !== 'output') {
+    volumeAnnouncedFor = null;
+    return;
+  }
+  const { volume } = usePlayer.getState();
+  if (volumeAnnouncedFor !== state.code) {
+    volumeAnnouncedFor = state.code;
+    lastVolumeReq = state.playback.volumeReqSeq;
+    lastAnnouncedVolume = volume;
+    party.volumeState(volume);
+    return;
+  }
+  if (state.playback.volumeReqSeq > lastVolumeReq) {
+    lastVolumeReq = state.playback.volumeReqSeq;
+    const target = state.playback.volumeTarget;
+    if (target !== null) {
+      usePlayer.getState().setVolume(target);
+      lastAnnouncedVolume = target;
+      party.volumeState(target);
+      return;
+    }
+  }
+  if (Math.abs(volume - lastAnnouncedVolume) > 0.005) {
+    lastAnnouncedVolume = volume;
+    party.volumeState(volume);
+  }
+}
+
 /** The party's running order onto the player, at its position; started only if the party is going now. */
 function load(state: PartyState): void {
   const track = state.playback.track;
@@ -352,6 +546,7 @@ function reconcileQueue(state: PartyState): void {
 /** A new party plays nothing until someone presses something; the host hands it what's already playing. */
 function seedEmptyParty(state: PartyState): void {
   if (state.connection !== 'live' || state.you?.isHost !== true || !current()) return;
+  if (state.kind === 'connect') return publishConnect(state);
   const { queue, index } = usePlayer.getState();
   const keep = queue.slice(index + 1).filter((e) => e.tier !== 'context');
   if (keep.length !== queue.length - index - 1) partyPlayer.setUpcoming(keep.map((e) => e.track), keep.map((e) => (e.tier === 'autoplay' ? 'autoplay' : 'user')));
@@ -392,7 +587,7 @@ let topping: Promise<void> | null = null;
 function maybeTopUpAutoplay(): void {
   const state = useParty.getState();
   const playing = state.playback.track;
-  if (!state.code || !playing || !state.playback.autoplayEnabled) return;
+  if (!inJam(state) || !playing || !state.playback.autoplayEnabled) return;
   if (autoplaySupplierId(state.members, state.hostOnlyControl) !== state.you?.memberId) return;
   if (partyQueueIndexOf(state.queue, state.playback, playing.videoId) < 0) return;
   const waiting = partyUpcomingAfter(state.queue, state.playback, playing.videoId);
@@ -440,18 +635,34 @@ export function startPartySync(): () => void {
     onIntent,
     shouldDeferPlay,
     onLockedTransport,
-    inParty: () => !!useParty.getState().code,
+    // Fork: a jam's AutoPlay and mixing are the party's; Connect's output is one player like any other.
+    inParty: () => inJam(),
+    remote: () => (connectRole(useParty.getState()) === 'remote' ? remoteControl : null),
+  });
+  // Fork, Connect: music coming out of this tab at sign-in keeps it the output after a server
+  // restart; and the output reports its real playhead, which every other device follows.
+  setConnectPlaying(() => playWhenReady() && !remotePlayer.active);
+  setMeasuredReader(() => {
+    if (connectRole(useParty.getState()) !== 'output') return null;
+    const entry = current();
+    const audio = getAudio();
+    const head = getPlayhead();
+    if (!entry || !audio || !head || head.paused) return null;
+    return { videoId: entry.track.videoId, positionMs: head.sec * 1000, durationMs: Number.isFinite(audio.duration) ? audio.duration * 1000 : 0 };
   });
   let key = '';
   const off = useParty.subscribe((state) => {
-    const next = `${state.playback.seq}|${state.queue.seq}|${state.code}|${state.clockSynced}`;
+    const output = outputOf(state);
+    const next = `${state.playback.seq}|${state.queue.seq}|${state.code}|${state.clockSynced}|${output?.memberId}|${output?.connected}|${state.you?.memberId}`;
     if (next === key) return;
     key = next;
-    if (state.code !== lastPartyCode) {
+    // Fork: the personal queue is put aside for a jam only; Connect is where the account always is.
+    const jamCode = inJam(state) ? state.code : null;
+    if (jamCode !== lastPartyCode) {
       const was = lastPartyCode !== null;
-      lastPartyCode = state.code;
-      if (!was && state.code) onEnteredParty();
-      else if (was && !state.code) onLeftParty();
+      lastPartyCode = jamCode;
+      if (!was && jamCode) onEnteredParty();
+      else if (was && !jamCode) onLeftParty();
     }
     // Every control this device sent has come back around (or someone moved the party past ours).
     if (state.playback.seq >= awaitPlaybackSeq && state.queue.seq >= awaitQueueSeq) reconcileQuietUntil = 0;
@@ -462,11 +673,17 @@ export function startPartySync(): () => void {
     reconcile();
     maybeTopUpAutoplay();
   }, TICK_MS);
+  // Fork: the output's own volume changes are announced as they happen, not on the next tick.
+  const offVolume = usePlayer.subscribe((s, before) => {
+    if (s.volume !== before.volume && connectRole(useParty.getState()) === 'output') reconcileVolume(useParty.getState(), 'output');
+  });
   return () => {
     off();
+    offVolume();
     clearInterval(tick);
     clearTimeout(publishTimer);
     clearTimeout(startTimer);
     setPartyHooks(null);
+    setMeasuredReader(null);
   };
 }

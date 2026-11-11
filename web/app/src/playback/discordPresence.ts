@@ -3,7 +3,7 @@ import type { DiscordNowPlaying } from '@bitchord/shared/bridge';
 import { getBridge } from '@/extension/bridge';
 import { useDiscord, useDiscordOptions } from '@/extension/useDiscord';
 import { sizedArtwork } from '@/lib/artwork';
-import { getAudio, usePlayer } from '@/state/player';
+import { getAudio, remotePlayer, usePlayer } from '@/state/player';
 
 /**
  * Tells the extension what's playing, for the Discord card (prompt §7.2).
@@ -48,7 +48,8 @@ export function startPublisher(): () => void {
     const options = useDiscordOptions.getState().options;
     const bridge = getBridge();
     if (!bridge) return;
-    if (status === 'paused' || status === 'idle' || status === 'error') {
+    // Fork, Connect: nothing plays here while this tab shows another device.
+    if (status === 'paused' || status === 'idle' || status === 'error' || remotePlayer.active) {
       if (sent === 'clear') return;
       sent = 'clear';
       void bridge.call('discord.presence', { track: null, options }).catch(() => (sent = null));

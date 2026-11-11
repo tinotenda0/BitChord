@@ -18,7 +18,7 @@ services:
       # check). Native apps send no Origin and aren't affected. The web player
       # at music.tinotenda.co (BitChord web) hosts and joins jams here, and
       # Marble Music at join.tinotenda.co joins guests to them.
-      JAM_ALLOWED_ORIGINS: "https://music.tinotenda.co,https://join.tinotenda.co"
+      JAM_ALLOWED_ORIGINS: "https://music.tinotenda.co,https://join.tinotenda.co,https://marble-player.pages.dev"
       # Somebody invited to a jam without the app joins it from Marble Music,
       # as a guest: the invite page offers this first. The code is appended.
       JAM_WEB_JOIN_URL: "https://join.tinotenda.co/jam?code="

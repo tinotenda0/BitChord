@@ -43,7 +43,8 @@ function describeStream(np: NowPlaying): string | null {
 function AutomixLine({ videoId }: { videoId: string }) {
   const state = usePlayer((s) => s.automixState);
   const nextInQueue = usePlayer((s) => s.queue[s.index + 1]?.track.videoId ?? null);
-  const inParty = useParty((s) => !!s.code);
+  // Fork: Automix stops for a jam only.
+  const inParty = useParty((s) => !!s.code && s.kind === 'jam');
   const analyzer = useAnalyzer();
 
   let text: string;

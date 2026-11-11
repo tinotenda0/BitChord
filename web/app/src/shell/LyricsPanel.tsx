@@ -11,7 +11,7 @@ import type { SourceState } from '@/lyrics/repository';
 import { enabledSources } from '@/lyrics/settings';
 import { sourceById, type LyricsSourceId } from '@/lyrics/sources';
 import { useLyrics, useLyricsUi } from '@/lyrics/useLyrics';
-import { getAudio, getPlayhead, usePlayer } from '@/state/player';
+import { getAudio, getPlayhead, getRemoteTimeline, usePlayer } from '@/state/player';
 import { LyricsSettings } from './LyricsSettings';
 
 type AmLyricsElement = HTMLElement & {
@@ -155,12 +155,14 @@ function LyricsView({ ttml, full }: { ttml: string; full: boolean }) {
   useEffect(() => {
     const audio = getAudio();
     const el = element.current;
-    if (!audio || !el) return;
-    if (mixing) {
+    // Fork, Connect: showing another device, the lyrics follow its playhead; nothing plays here.
+    const remote = getRemoteTimeline() !== null;
+    if ((!audio && !remote) || !el) return;
+    if (mixing || remote || !audio) {
       // A loop mix plays the song from a deck while its element sits paused:
       // follow the mix's playhead, which loops and moves at the ramped tempo.
       // A loop's wrap (or the handover) is a jump on purpose, not drift to steer out.
-      const start = getPlayhead()?.sec ?? audio.currentTime;
+      const start = getPlayhead()?.sec ?? audio?.currentTime ?? 0;
       const clock = new LyricClock(start * 1000);
       let discontinuity = 0;
       let last = start;

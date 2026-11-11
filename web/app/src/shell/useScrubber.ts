@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getAudio, getMixBeat, getPlayhead, usePlayer } from '@/state/player';
+import { getAudio, getMixBeat, getPlayhead, getRemoteTimeline, usePlayer } from '@/state/player';
 
 export function clock(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -84,14 +84,16 @@ export function useScrubber() {
   useEffect(() => {
     const audio = getAudio();
     const element = bar.current;
-    if (!audio || !element) return;
+    // Fork, Connect: showing another device, the bar follows its playhead and nothing plays here.
+    if ((!audio && !getRemoteTimeline()) || !element) return;
     let frame = 0;
     const draw = () => {
-      const duration = audio.duration;
+      const remote = getRemoteTimeline();
+      const duration = remote ? remote.durationSec : (audio?.duration ?? 0);
       // during a loop mix the element is paused under the decks: the mix's own playhead
       const head = getPlayhead();
-      const paused = head?.paused ?? audio.paused;
-      const time = dragging !== null && Number.isFinite(duration) ? dragging * duration : (head?.sec ?? audio.currentTime);
+      const paused = head?.paused ?? audio?.paused ?? true;
+      const time = dragging !== null && Number.isFinite(duration) ? dragging * duration : (head?.sec ?? audio?.currentTime ?? 0);
       const base = Math.min(1, Math.max(0, duration > 0 ? time / duration : 0));
       const beat = dragging === null ? getMixBeat() : null;
       const mix = stepPulse(pulse.current, performance.now(), beat, paused);
@@ -107,10 +109,10 @@ export function useScrubber() {
     };
     draw();
     const onSeeked = () => draw();
-    audio.addEventListener('seeked', onSeeked);
+    audio?.addEventListener('seeked', onSeeked);
     return () => {
       cancelAnimationFrame(frame);
-      audio.removeEventListener('seeked', onSeeked);
+      audio?.removeEventListener('seeked', onSeeked);
     };
   }, [status, deck, dragging, mixing]);
 
@@ -121,7 +123,7 @@ export function useScrubber() {
 
   const handlers = {
     onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
-      if (!getAudio()) return;
+      if (!getAudio() && !getRemoteTimeline()) return;
       e.currentTarget.setPointerCapture(e.pointerId);
       setDragging(fractionAt(e));
     },
@@ -130,8 +132,10 @@ export function useScrubber() {
     },
     onPointerUp: (e: React.PointerEvent<HTMLElement>) => {
       if (dragging === null) return;
+      const remote = getRemoteTimeline();
       const audio = getAudio();
-      if (audio && Number.isFinite(audio.duration)) seek(fractionAt(e) * audio.duration);
+      const duration = remote ? remote.durationSec : audio?.duration;
+      if (duration && Number.isFinite(duration)) seek(fractionAt(e) * duration);
       setDragging(null);
     },
     onPointerCancel: () => setDragging(null),

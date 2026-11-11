@@ -49,7 +49,7 @@ export default function ListenTogetherPage() {
     <div className={settingsUi.centered}>
       <PageHeader title="Listen Together" />
       <div className={settingsUi.body}>
-        {state.code ? (
+        {state.code && state.kind === 'jam' ? (
           <InParty />
         ) : inviteCode ? (
           <InviteCard code={inviteCode} server={inviteServer} signedIn={signedIn} />
