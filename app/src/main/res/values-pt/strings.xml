@@ -1484,4 +1484,6 @@
     <string name="bit_perfect_status_waiting">Aguardando uma faixa sem perdas em uma saída compatível</string>
     <string name="bit_perfect_status_unavailable">Indisponível para esta faixa (%1$s)</string>
     <string name="automix_overview">Visão geral do Automix</string>
+    <string name="automix_car_crossfade">No carro, usar crossfade</string>
+    <string name="automix_car_crossfade_subtitle">No Android Auto, as músicas passam umas para as outras com um crossfade simples em vez de mixagem. Mais suave no carro e com sinal fraco.</string>
 </resources>

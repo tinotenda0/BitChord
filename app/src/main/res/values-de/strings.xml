@@ -1479,4 +1479,6 @@
     <string name="bit_perfect_status_waiting">Warte auf einen verlustfreien Titel an einem unterstützten Ausgang</string>
     <string name="bit_perfect_status_unavailable">Für diesen Titel nicht verfügbar (%1$s)</string>
     <string name="automix_overview">Automix-Übersicht</string>
+    <string name="automix_car_crossfade">Im Auto stattdessen Crossfade</string>
+    <string name="automix_car_crossfade_subtitle">In Android Auto gehen Songs einfach ineinander über, statt gemixt zu werden. Besser bei Autolautsprechern und schwachem Empfang.</string>
 </resources>

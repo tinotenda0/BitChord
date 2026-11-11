@@ -1330,4 +1330,6 @@
     <string name="connect_volume_setting">내 기기가 이 볼륨을 바꾸도록 허용</string>
     <string name="connect_volume_setting_subtitle">이 기기에서 재생 중일 때 다른 기기에서 볼륨 버튼 등으로 소리를 키우거나 줄일 수 있습니다.</string>
     <string name="automix_overview">Automix 개요</string>
+    <string name="automix_car_crossfade">차에서는 크로스페이드 사용</string>
+    <string name="automix_car_crossfade_subtitle">Android Auto에서는 믹스 대신 일반 크로스페이드로 곡을 잇습니다. 차량 스피커와 약한 신호에서 더 매끄럽습니다.</string>
 </resources>

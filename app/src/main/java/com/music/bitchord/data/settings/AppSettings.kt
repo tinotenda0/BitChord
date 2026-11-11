@@ -275,6 +275,35 @@ object AppSettings {
      */
     val smartFadeEnabled = MutableStateFlow(false)
 
+    /**
+     * Fork: while Android Auto is connected, Automix stands aside for a plain
+     * crossfade. Automix's long beat-matched blends sound off over car speakers
+     * and its analysis needs each track decoded ahead of time, which a patchy
+     * mobile signal on the road can't keep up with. On by default.
+     */
+    val carPlainCrossfade = MutableStateFlow(true)
+
+    /** Runtime only, never saved: Android Auto is connected. Kept by PlaybackService. */
+    val inCar = MutableStateFlow(false)
+
+    /** Automix is in charge right now: switched on, and not standing aside for the car. */
+    val automixActive: Boolean
+        get() = smartFadeEnabled.value && !(inCar.value && carPlainCrossfade.value)
+
+    /**
+     * The crossfade length in effect. The slider is hidden while Automix is on,
+     * so it is usually at zero when Automix stands aside in the car; a plain
+     * fade of [CAR_CROSSFADE_SECONDS] is used then instead of hard cuts.
+     */
+    val effectiveCrossfadeSeconds: Int
+        get() {
+            val manual = crossfadeSeconds.value
+            val carStandIn = smartFadeEnabled.value && inCar.value && carPlainCrossfade.value
+            return if (carStandIn && manual == 0) CAR_CROSSFADE_SECONDS else manual
+        }
+
+    const val CAR_CROSSFADE_SECONDS = 6
+
     /** The CPU budget used by Beat This! and vocal analysis for Automix. */
     val automixPerformanceMode = MutableStateFlow(AutomixPerformanceMode.BALANCED)
     val skipSilence = MutableStateFlow(false)
@@ -976,6 +1005,7 @@ object AppSettings {
         syncDownloadedPlaylists.value = prefs.getBoolean(KEY_SYNC_DOWNLOADED_PLAYLISTS, false)
         crossfadeSeconds.value = prefs.getInt(KEY_CROSSFADE, 0)
         smartFadeEnabled.value = prefs.getBoolean(KEY_SMART_FADE, false)
+        carPlainCrossfade.value = prefs.getBoolean(KEY_CAR_PLAIN_CROSSFADE, true)
         automixPerformanceMode.value = runCatching {
             AutomixPerformanceMode.valueOf(
                 prefs.getString(KEY_AUTOMIX_PERFORMANCE_MODE, null) ?: AutomixPerformanceMode.BALANCED.name,
@@ -1297,6 +1327,11 @@ object AppSettings {
     fun setSmartFadeEnabled(value: Boolean) {
         smartFadeEnabled.value = value
         prefs.edit().putBoolean(KEY_SMART_FADE, value).apply()
+    }
+
+    fun setCarPlainCrossfade(value: Boolean) {
+        carPlainCrossfade.value = value
+        prefs.edit().putBoolean(KEY_CAR_PLAIN_CROSSFADE, value).apply()
     }
 
     fun setAutomixPerformanceMode(value: AutomixPerformanceMode) {
@@ -2259,6 +2294,7 @@ object AppSettings {
     private const val KEY_SYNC_DOWNLOADED_PLAYLISTS = "sync_downloaded_playlists"
     private const val KEY_CROSSFADE = "crossfade_seconds"
     private const val KEY_SMART_FADE = "smart_fade_enabled"
+    private const val KEY_CAR_PLAIN_CROSSFADE = "car_plain_crossfade"
     private const val KEY_AUTOMIX_PERFORMANCE_MODE = "automix_performance_mode"
     private const val KEY_SKIP_SILENCE = "skip_silence"
     private const val KEY_OUTPUT_PCM_MODE = "output_pcm_mode"

@@ -1462,4 +1462,6 @@
     <string name="bit_perfect_status_waiting">กำลังรอแทร็กแบบไม่สูญเสียคุณภาพบนเอาต์พุตที่รองรับ</string>
     <string name="bit_perfect_status_unavailable">ไม่พร้อมใช้งานสำหรับแทร็กนี้ (%1$s)</string>
     <string name="automix_overview">ภาพรวม Automix</string>
+    <string name="automix_car_crossfade">ใช้ครอสเฟดในรถแทน</string>
+    <string name="automix_car_crossfade_subtitle">ใน Android Auto เพลงจะเฟดต่อกันแบบธรรมดาแทนการมิกซ์ ลื่นไหลกว่าบนลำโพงรถและสัญญาณอ่อน</string>
 </resources>
