@@ -153,6 +153,16 @@ function onIntent(): void {
 function publish(): void {
   const state = useParty.getState();
   if (!state.code) return;
+  // Fork: a song picked a moment ago is still loading, and the element still holds the previous
+  // one, so its position was published as the new song's: the party then started the song that
+  // far in (a minute, half of it) and moved the player there. Wait for the load, and keep the
+  // party's own corrections off this player meanwhile.
+  if (usePlayer.getState().status === 'loading') {
+    reconcileQuietUntil = performance.now() + INTENT_QUIET_MS;
+    clearTimeout(publishTimer);
+    publishTimer = setTimeout(publish, 250);
+    return;
+  }
   if (state.kind === 'connect') return publishConnect(state);
   const { queue, index } = usePlayer.getState();
   const entry = current();
@@ -330,6 +340,7 @@ function reconcile(): void {
     setAwaiting(false);
     return;
   }
+  if (role === 'output') return followOtherDevices(state);
   if (!state.code) {
     loadingVideoId = null;
     locallyPaused = false;
@@ -416,6 +427,36 @@ function reconcile(): void {
   driftStrikes = 0;
   driftCooldownUntil = now + DRIFT_COOLDOWN_MS;
   partyPlayer.seekTo(want / 1000);
+}
+
+/**
+ * Fork, Connect: the output is the party's clock. Everyone else follows its measured reports, so
+ * it never steers itself toward the party's extrapolation of where it is: that's a jam member's
+ * job, and on the output every buffering stall became a seek (a looping segment, a gap of
+ * silence). It acts only on a change another device made (a remote's play, pause, seek or song),
+ * each once, and a seek only when that change put it more than 2 s away.
+ */
+let followedSeq = -1;
+const FOLLOW_SEEK_MS = 2_000;
+function followOtherDevices(state: PartyState): void {
+  setAwaiting(false);
+  if (performance.now() < reconcileQuietUntil) return;
+  const target = state.playback;
+  if (!target.track) return seedEmptyParty(state);
+  reconcileQueue(state);
+  if (target.seq <= followedSeq) return;
+  followedSeq = target.seq;
+  // This player's own control, back from the server: nothing to do.
+  if (target.updatedBy && target.updatedBy === state.you?.memberId) return;
+  const entry = current();
+  if (entry?.track.videoId !== target.track.videoId) return load(state);
+  const want = partyPositionMs() ?? target.positionMs;
+  if (!target.isPlaying) {
+    if (playWhenReady()) partyPlayer.pause();
+  } else if (!playWhenReady()) {
+    partyPlayer.play();
+  }
+  if (Math.abs(positionMs() - want) > FOLLOW_SEEK_MS) partyPlayer.seekTo(want / 1000);
 }
 
 /** Fork, Connect: this tab as a remote, showing what the output plays. */
@@ -516,6 +557,7 @@ function load(state: PartyState): void {
   const track = state.playback.track;
   if (!track || loadingVideoId === track.videoId) return;
   loadingVideoId = track.videoId;
+  followedSeq = Math.max(followedSeq, state.playback.seq);
   // A not-found index plays the track alone, never queue[0].
   const at = partyQueueIndexOf(state.queue, state.playback, track.videoId);
   const items = at >= 0 ? state.queue.items : [track];
