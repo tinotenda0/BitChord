@@ -1,5 +1,6 @@
 import type { Track } from '@/data/music/types';
 import type { QueueTier } from '@/playback/queue/timeline';
+import { trackLog } from '@/playback/trackLog';
 import { getAudio, getPlayhead, partyPlayer, remotePlayer, setPartyHooks, usePlayer, type RemoteControl } from '@/state/player';
 import {
   controlsLocked,
@@ -51,6 +52,9 @@ const MAX_UPCOMING = 25;
 /** Autoplay.MAX_QUEUED_AUTOPLAY. */
 const MAX_QUEUED_AUTOPLAY = 10;
 const QUEUE_ECHO_TIMEOUT_MS = 5_000;
+/** Fork: how long a publish waits for a picked song to finish loading. */
+const PUBLISH_LOAD_WAIT_MS = 8_000;
+let publishWaitingSince: number | null = null;
 /** Fork, Connect: a playlist's worth may follow the playing track (JAM_CONNECT_MAX_UPCOMING). */
 const CONNECT_MAX_UPCOMING = 200;
 /** Fork, Connect: how much of what already played the output shares. */
@@ -158,11 +162,19 @@ function publish(): void {
   // far in (a minute, half of it) and moved the player there. Wait for the load, and keep the
   // party's own corrections off this player meanwhile.
   if (usePlayer.getState().status === 'loading') {
-    reconcileQuietUntil = performance.now() + INTENT_QUIET_MS;
-    clearTimeout(publishTimer);
-    publishTimer = setTimeout(publish, 250);
-    return;
+    // At most a few seconds: a load whose 'playing' never reports back must not leave the party
+    // without a word from this device for the rest of the song (the element has the new song by
+    // then, so its position is right anyway).
+    publishWaitingSince ??= performance.now();
+    if (performance.now() - publishWaitingSince < PUBLISH_LOAD_WAIT_MS) {
+      reconcileQuietUntil = performance.now() + INTENT_QUIET_MS;
+      clearTimeout(publishTimer);
+      publishTimer = setTimeout(publish, 250);
+      return;
+    }
+    trackLog.w('party: publishing while the song still says loading');
   }
+  publishWaitingSince = null;
   if (state.kind === 'connect') return publishConnect(state);
   const { queue, index } = usePlayer.getState();
   const entry = current();
@@ -437,6 +449,7 @@ function reconcile(): void {
  * each once, and a seek only when that change put it more than 2 s away.
  */
 let followedSeq = -1;
+let followedQueueSeq = -1;
 const FOLLOW_SEEK_MS = 2_000;
 function followOtherDevices(state: PartyState): void {
   setAwaiting(false);
@@ -446,7 +459,14 @@ function followOtherDevices(state: PartyState): void {
   // Mid-load, the player can't take a play, pause or seek yet: leave whatever arrived meanwhile
   // (the app sends play right after the song) for when it's done; load() looks again then.
   if (loadingVideoId !== null || usePlayer.getState().status === 'loading') return;
-  reconcileQueue(state);
+  // The party's queue onto this player only when it changed and another device changed it (the
+  // app's rule). Applied on every tick, it cut this player's queue to the jam's 25 while publish
+  // sent the Connect window of 200, and the two undid each other: queue storms, the same
+  // songs again.
+  if (state.queue.seq > followedQueueSeq) {
+    followedQueueSeq = state.queue.seq;
+    if (target.updatedBy && target.updatedBy !== state.you?.memberId) reconcileQueue(state, CONNECT_MAX_UPCOMING);
+  }
   if (target.seq <= followedSeq) return;
   followedSeq = target.seq;
   // This player's own control, back from the server: nothing to do.
@@ -561,6 +581,8 @@ function load(state: PartyState, asOutput = false): void {
   if (!track || loadingVideoId === track.videoId) return;
   loadingVideoId = track.videoId;
   followedSeq = Math.max(followedSeq, state.playback.seq);
+  // The load puts the party's whole running order on the player already.
+  followedQueueSeq = Math.max(followedQueueSeq, state.queue.seq);
   // A not-found index plays the track alone, never queue[0].
   const at = partyQueueIndexOf(state.queue, state.playback, track.videoId);
   const items = at >= 0 ? state.queue.items : [track];
@@ -578,13 +600,13 @@ function load(state: PartyState, asOutput = false): void {
 }
 
 /** Keeps the player's upcoming tracks equal to the party's, without touching the playing one. */
-function reconcileQueue(state: PartyState): void {
+function reconcileQueue(state: PartyState, maxUpcoming = MAX_UPCOMING): void {
   if (!state.queue.items.length) return;
   const entry = current();
   if (!entry) return;
   const at = partyQueueIndexOf(state.queue, state.playback, entry.track.videoId);
   if (at < 0) return;
-  const desired = state.queue.items.slice(at + 1, at + 1 + MAX_UPCOMING);
+  const desired = state.queue.items.slice(at + 1, at + 1 + maxUpcoming);
   const { queue, index } = usePlayer.getState();
   const local = queue.slice(index + 1).map((e) => e.track.videoId);
   if (local.length === desired.length && local.every((id, i) => id === desired[i]!.videoId)) return;

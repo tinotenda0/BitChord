@@ -276,6 +276,24 @@ func parseSocketToken(r *http.Request) string {
 	return ""
 }
 
+// connectOutcome describes a Connect party after a control, for the log: what it plays, where in
+// the queue, how long the queue is. Enough to see two devices disagreeing from the log alone.
+func connectOutcome(p *party.Party, success bool, errCode string) string {
+	if !success {
+		return "refused (" + errCode + ")"
+	}
+	pb := p.Playback
+	title := "nothing"
+	if pb.Track != nil {
+		title = fmt.Sprintf("%q", pb.Track.Title)
+	}
+	state := "paused"
+	if pb.IsPlaying {
+		state = "playing"
+	}
+	return fmt.Sprintf("%s %s, queue %d/%d", title, state, pb.QueueIndex, len(pb.Queue))
+}
+
 // REST Handlers
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
@@ -1195,6 +1213,11 @@ func handleSocketFrame(p *party.Party, member *party.Member, sc *hub.SafeConn, f
 				atMs = int64(at)
 			}
 			videoId, _ := frame["videoId"].(string)
+			// The output says it plays something other than what the party thinks: every
+			// other device is showing the wrong song. Worth a line each time it happens.
+			if p.IsConnect() && p.Playback.Track != nil && videoId != "" && videoId != p.Playback.Track.VideoId {
+				log.Printf("connect %s: %s (%s) reports playing %s but the party has %s (%q)", p.Code, member.DeviceName, member.App, videoId, p.Playback.Track.VideoId, p.Playback.Track.Title)
+			}
 			if dur, ok := frame["durationMs"].(float64); ok && p.LearnDuration(member, videoId, int64(dur)) {
 				hubInst.Broadcast(p.Code, stateFrame(p), "")
 			}
@@ -1223,10 +1246,10 @@ func handleSocketFrame(p *party.Party, member *party.Member, sc *hub.SafeConn, f
 		action, _ := frame["action"].(string)
 		// One person's own devices: which of them did what is the first thing
 		// to look at when playback does something nobody asked for.
-		if p.IsConnect() && !protocol.QuietActions[action] {
-			log.Printf("connect %s: %s (%s) sent %s", p.Code, member.DeviceName, member.App, action)
-		}
 		success, errCode, errMsg := applyControl(p, member, action, frame)
+		if p.IsConnect() && !protocol.QuietActions[action] {
+			log.Printf("connect %s: %s (%s) sent %s -> %s", p.Code, member.DeviceName, member.App, action, connectOutcome(p, success, errCode))
+		}
 		if success {
 			p.Touch()
 			// If queue changed, broadcast queue first
