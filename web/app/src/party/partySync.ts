@@ -333,7 +333,7 @@ function reconcile(): void {
   if (role !== 'none') reconcileVolume(state, role);
   if (role === 'output' && wasRemote && state.playback.track) {
     reconcileQuietUntil = 0;
-    return load(state);
+    return load(state, true);
   }
   if (role === 'solo') {
     loadingVideoId = null;
@@ -443,13 +443,16 @@ function followOtherDevices(state: PartyState): void {
   if (performance.now() < reconcileQuietUntil) return;
   const target = state.playback;
   if (!target.track) return seedEmptyParty(state);
+  // Mid-load, the player can't take a play, pause or seek yet: leave whatever arrived meanwhile
+  // (the app sends play right after the song) for when it's done; load() looks again then.
+  if (loadingVideoId !== null || usePlayer.getState().status === 'loading') return;
   reconcileQueue(state);
   if (target.seq <= followedSeq) return;
   followedSeq = target.seq;
   // This player's own control, back from the server: nothing to do.
   if (target.updatedBy && target.updatedBy === state.you?.memberId) return;
   const entry = current();
-  if (entry?.track.videoId !== target.track.videoId) return load(state);
+  if (entry?.track.videoId !== target.track.videoId) return load(state, true);
   const want = partyPositionMs() ?? target.positionMs;
   if (!target.isPlaying) {
     if (playWhenReady()) partyPlayer.pause();
@@ -553,7 +556,7 @@ function reconcileVolume(state: PartyState, role: ConnectRole): void {
 }
 
 /** The party's running order onto the player, at its position; started only if the party is going now. */
-function load(state: PartyState): void {
+function load(state: PartyState, asOutput = false): void {
   const track = state.playback.track;
   if (!track || loadingVideoId === track.videoId) return;
   loadingVideoId = track.videoId;
@@ -562,7 +565,10 @@ function load(state: PartyState): void {
   const at = partyQueueIndexOf(state.queue, state.playback, track.videoId);
   const items = at >= 0 ? state.queue.items : [track];
   const startMs = partyPositionMs() ?? state.playback.positionMs;
-  const play = state.playback.isPlaying && state.clockSynced && msUntilStart() <= 0;
+  // Fork: Connect's output starts at once. The server puts a playing song's start a moment
+  // ahead, which a jam waits out so everyone starts together; the output waiting for it loaded
+  // the song paused, and a tap on the phone seemed to do nothing until the second.
+  const play = asOutput ? state.playback.isPlaying : state.playback.isPlaying && state.clockSynced && msUntilStart() <= 0;
   void partyPlayer
     .load(items.map(fromPartyTrack), items.map(tierOf), Math.max(0, at), startMs / 1000, play)
     .finally(() => {
