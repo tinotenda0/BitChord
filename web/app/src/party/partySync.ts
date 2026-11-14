@@ -697,6 +697,21 @@ function maybeTopUpAutoplay(): void {
   })();
 }
 
+// ---- Connect output: changes nobody reported -----------------------------------------------
+
+const OUTPUT_PUBLISH_MS = 400;
+let outputPublishTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Publishes the output's own song and queue, unless another device's control is still to be followed. */
+function publishOutputChange(): void {
+  const state = useParty.getState();
+  if (state.kind !== 'connect' || connectRole(state) !== 'output') return;
+  // A remote's song that hasn't been loaded here yet must win over what this player still holds.
+  const pending = state.playback.seq > followedSeq && !!state.playback.updatedBy && state.playback.updatedBy !== state.you?.memberId;
+  if (pending || loadingVideoId !== null) return;
+  publish();
+}
+
 // ---- Wiring ---------------------------------------------------------------------------
 
 /** Starts following the party; returns the stop. Mounted once, in the shell. */
@@ -747,9 +762,23 @@ export function startPartySync(): () => void {
   const offVolume = usePlayer.subscribe((s, before) => {
     if (s.volume !== before.volume && connectRole(useParty.getState()) === 'output') reconcileVolume(useParty.getState(), 'output');
   });
+  // Fork, Connect: the output tells the party about every change to its song or running order,
+  // not only the ones a user action reported. The crossfade moving on and AutoPlay topping the
+  // queue up said nothing: the party kept the old song (the phone showed one song all session)
+  // and its one-song queue, and the next control from the phone loaded that old song back here
+  // (the same songs over and over).
+  const offOutput = usePlayer.subscribe((s, before) => {
+    if (s.queue === before.queue && s.index === before.index) return;
+    const state = useParty.getState();
+    if (state.kind !== 'connect' || connectRole(state) !== 'output') return;
+    clearTimeout(outputPublishTimer);
+    outputPublishTimer = setTimeout(publishOutputChange, OUTPUT_PUBLISH_MS);
+  });
   return () => {
     off();
     offVolume();
+    offOutput();
+    clearTimeout(outputPublishTimer);
     clearInterval(tick);
     clearTimeout(publishTimer);
     clearTimeout(startTimer);
