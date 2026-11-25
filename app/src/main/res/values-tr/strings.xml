@@ -1436,4 +1436,6 @@
     <string name="bit_perfect_status_waiting">Desteklenen bir çıkışta kayıpsız parça bekleniyor</string>
     <string name="bit_perfect_status_unavailable">Bu parça için kullanılamıyor (%1$s)</string>
     <string name="automix_overview">Automix genel bakışı</string>
+    <string name="automix_car_crossfade">Arabada bunun yerine geçiş efekti</string>
+    <string name="automix_car_crossfade_subtitle">Android Auto’da şarkılar miks yerine düz bir geçişle birbirine bağlanır. Araba hoparlörlerinde ve zayıf sinyalde daha akıcı.</string>
 </resources>

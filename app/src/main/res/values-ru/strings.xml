@@ -1511,4 +1511,6 @@
     <string name="bit_perfect_status_waiting">Ожидание трека без потерь на поддерживаемом выходе</string>
     <string name="bit_perfect_status_unavailable">Недоступно для этого трека (%1$s)</string>
     <string name="automix_overview">Обзор Automix</string>
+    <string name="automix_car_crossfade">В машине — обычный кроссфейд</string>
+    <string name="automix_car_crossfade_subtitle">В Android Auto треки плавно переходят друг в друга без микширования. Лучше для автомобильных динамиков и слабой связи.</string>
 </resources>

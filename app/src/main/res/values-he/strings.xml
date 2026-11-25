@@ -1484,4 +1484,6 @@
     <string name="bit_perfect_status_waiting">ממתין לרצועת Lossless ביציאה נתמכת</string>
     <string name="bit_perfect_status_unavailable">לא זמין עבור רצועה זו (%1$s)</string>
     <string name="automix_overview">סקירת Automix</string>
+    <string name="automix_car_crossfade">מעבר הדרגתי ברכב במקום</string>
+    <string name="automix_car_crossfade_subtitle">ב-Android Auto השירים עוברים זה לזה במעבר פשוט במקום מיקס. חלק יותר ברמקולי הרכב ובקליטה חלשה.</string>
 </resources>

@@ -1418,4 +1418,6 @@
     <string name="bit_perfect_status_waiting">In attesa di un brano lossless su un\'uscita supportata</string>
     <string name="bit_perfect_status_unavailable">Non disponibile per questo brano (%1$s)</string>
     <string name="automix_overview">Panoramica Automix</string>
+    <string name="automix_car_crossfade">In auto usa la dissolvenza</string>
+    <string name="automix_car_crossfade_subtitle">In Android Auto i brani si dissolvono l’uno nell’altro invece di essere mixati. Più fluido in auto e con segnale debole.</string>
 </resources>

@@ -1479,4 +1479,6 @@
     <string name="bit_perfect_status_waiting">समर्थित आउटपुट पर लॉसलेस ट्रैक का इंतज़ार है</string>
     <string name="bit_perfect_status_unavailable">इस ट्रैक के लिए उपलब्ध नहीं (%1$s)</string>
     <string name="automix_overview">Automix का अवलोकन</string>
+    <string name="automix_car_crossfade">कार में इसके बजाय क्रॉसफ़ेड</string>
+    <string name="automix_car_crossfade_subtitle">Android Auto में गाने मिक्स होने के बजाय सीधे एक-दूसरे में फ़ेड होते हैं। कार के स्पीकर और कमज़ोर सिग्नल पर बेहतर।</string>
 </resources>

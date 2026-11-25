@@ -1456,4 +1456,6 @@
     <string name="bit_perfect_status_waiting">正在等待受支援輸出上的無損曲目</string>
     <string name="bit_perfect_status_unavailable">此曲目無法使用（%1$s）</string>
     <string name="automix_overview">Automix 總覽</string>
+    <string name="automix_car_crossfade">在車上改用淡入淡出</string>
+    <string name="automix_car_crossfade_subtitle">在 Android Auto 中，歌曲以一般淡入淡出銜接，而非混音。更適合車用音響和訊號較弱時。</string>
 </resources>

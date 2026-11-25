@@ -1396,4 +1396,6 @@
     <string name="bit_perfect_status_waiting">Đang chờ bản nhạc lossless trên đầu ra được hỗ trợ</string>
     <string name="bit_perfect_status_unavailable">Không khả dụng cho bản nhạc này (%1$s)</string>
     <string name="automix_overview">Tổng quan Automix</string>
+    <string name="automix_car_crossfade">Dùng crossfade khi trên xe</string>
+    <string name="automix_car_crossfade_subtitle">Trong Android Auto, các bài hát chuyển tiếp mờ dần thay vì được mix. Mượt hơn trên loa xe và khi sóng yếu.</string>
 </resources>

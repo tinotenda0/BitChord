@@ -231,6 +231,7 @@ fun SettingsScreen(
     val metered by AppSettings.meteredConnection.collectAsStateWithLifecycle()
     val crossfade by AppSettings.crossfadeSeconds.collectAsStateWithLifecycle()
     val smartFade by AppSettings.smartFadeEnabled.collectAsStateWithLifecycle()
+    val carPlainCrossfade by AppSettings.carPlainCrossfade.collectAsStateWithLifecycle()
     val automixPerformance by AppSettings.automixPerformanceMode.collectAsStateWithLifecycle()
     val skipSilence by AppSettings.skipSilence.collectAsStateWithLifecycle()
     val dolbyAtmos by AppSettings.dolbyAtmos.collectAsStateWithLifecycle()
@@ -820,6 +821,19 @@ fun SettingsScreen(
                         },
                         onClick = { AppSettings.setSmartFadeEnabled(!smartFade) },
                     )
+                }
+            }
+            if (smartFade) {
+                val carCrossfadeTitle = stringResource(R.string.automix_car_crossfade)
+                row(carCrossfadeTitle, "android auto", "car", "crossfade") {
+                    BypassedByBitPerfect(bitPerfectReady) {
+                        SettingsSubRow(
+                            title = carCrossfadeTitle,
+                            subtitle = stringResource(R.string.automix_car_crossfade_subtitle),
+                            checked = carPlainCrossfade,
+                            onCheckedChange = AppSettings::setCarPlainCrossfade,
+                        )
+                    }
                 }
             }
             val automixPerformanceTitle = stringResource(R.string.automix_performance)

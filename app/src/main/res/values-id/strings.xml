@@ -1456,4 +1456,6 @@
     <string name="bit_perfect_status_waiting">Menunggu trek lossless pada output yang didukung</string>
     <string name="bit_perfect_status_unavailable">Tidak tersedia untuk trek ini (%1$s)</string>
     <string name="automix_overview">Ringkasan Automix</string>
+    <string name="automix_car_crossfade">Crossfade di mobil saja</string>
+    <string name="automix_car_crossfade_subtitle">Di Android Auto, lagu berganti dengan crossfade biasa, bukan dimiks. Lebih mulus di speaker mobil dan sinyal lemah.</string>
 </resources>

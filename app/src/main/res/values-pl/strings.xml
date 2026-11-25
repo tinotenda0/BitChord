@@ -1519,4 +1519,6 @@
     <string name="bit_perfect_status_waiting">Oczekiwanie na bezstratny utwór na obsługiwanym wyjściu</string>
     <string name="bit_perfect_status_unavailable">Niedostępne dla tego utworu (%1$s)</string>
     <string name="automix_overview">Przegląd Automix</string>
+    <string name="automix_car_crossfade">W samochodzie zwykłe przenikanie</string>
+    <string name="automix_car_crossfade_subtitle">W Android Auto utwory przechodzą w siebie zwykłym przenikaniem zamiast miksu. Płynniej na głośnikach w aucie i przy słabym zasięgu.</string>
 </resources>

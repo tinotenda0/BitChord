@@ -1451,4 +1451,6 @@
     <string name="bit_perfect_status_waiting">Esperando una pista sin pérdida en una salida compatible</string>
     <string name="bit_perfect_status_unavailable">No disponible para esta pista (%1$s)</string>
     <string name="automix_overview">Resumen de Automix</string>
+    <string name="automix_car_crossfade">Fundido en el coche</string>
+    <string name="automix_car_crossfade_subtitle">En Android Auto, las canciones se funden sin mezclarse. Va mejor con los altavoces del coche y con poca cobertura.</string>
 </resources>

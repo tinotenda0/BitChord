@@ -1807,6 +1807,7 @@ class PlaybackService : MediaLibraryService() {
         applySettings(sparePlayer)
         observeSettings()
         observeScrobbling()
+        watchCarConnection()
         observeDiscord()
         watchSleepTimer()
         val restored = if (PartyPersonalQueueStash.hasStash()) {
@@ -3984,7 +3985,14 @@ class PlaybackService : MediaLibraryService() {
             SleepTimer.cancel()
         }
         if (exoPlayer.isPlaying) registerCurrentPlay()
-        savePlaybackState(exoPlayer)
+        // Fork: the whole snapshot, not just the scalars. The bounded-context
+        // record only takes a new position for the entry it was written with,
+        // and LastPlayed's window was cut around the old index, so between
+        // queue edits every cold start resumed at the track that was playing
+        // when the queue last changed, and played the same run again. In a car
+        // with a weak signal (Autoplay can't extend the queue, the phone kills
+        // the app between drives) that was every trip.
+        saveQueueSnapshot(exoPlayer)
         convertVideosAround(exoPlayer)
         prefetchAround(exoPlayer)
         // The second look belongs to the track it was started for; the
@@ -6318,8 +6326,8 @@ class PlaybackService : MediaLibraryService() {
             BoundedContextPersistence.clearImmediately()
             return
         }
-        val range = LastPlayed.window(player.mediaItemCount, player.currentMediaItemIndex)
-        persistedQueueStart = range.first
+        // The whole list is written below, so stored indices start at 0.
+        persistedQueueStart = 0
         LastPlayed.saveQueueImmediately(
             songs = (0 until player.mediaItemCount).map { player.getMediaItemAt(it).toSong() },
             index = player.currentMediaItemIndex,
@@ -8050,7 +8058,26 @@ class PlaybackService : MediaLibraryService() {
     }
 
 
+    /**
+     * Fork: tracks whether Android Auto is connected, whichever app the driver
+     * opened it from, so playback can change how it behaves on the road (see
+     * [AppSettings.carPlainCrossfade]). Projection only: a car running Android
+     * Automotive natively is a different device altogether.
+     */
+    private val carConnectionObserver = androidx.lifecycle.Observer<Int> { type ->
+        AppSettings.inCar.value = type == androidx.car.app.connection.CarConnection.CONNECTION_TYPE_PROJECTION
+    }
+    private var carConnection: androidx.car.app.connection.CarConnection? = null
+
+    private fun watchCarConnection() {
+        carConnection = runCatching { androidx.car.app.connection.CarConnection(this) }.getOrNull()
+        carConnection?.type?.observeForever(carConnectionObserver)
+    }
+
     override fun onDestroy() {
+        carConnection?.type?.removeObserver(carConnectionObserver)
+        carConnection = null
+        AppSettings.inCar.value = false
         WearBridge.attachStreams(null)
         WearBridge.releaseSpeaker()
         // Let go of the receiver's player but leave its session alone: a

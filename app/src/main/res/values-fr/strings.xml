@@ -1480,4 +1480,6 @@
     <string name="bit_perfect_status_waiting">En attente d\'un morceau sans perte sur une sortie compatible</string>
     <string name="bit_perfect_status_unavailable">Indisponible pour ce morceau (%1$s)</string>
     <string name="automix_overview">Aperçu d’Automix</string>
+    <string name="automix_car_crossfade">Fondu enchaîné en voiture</string>
+    <string name="automix_car_crossfade_subtitle">Dans Android Auto, les titres s’enchaînent en fondu simple au lieu d’être mixés. Plus fluide en voiture et avec un signal faible.</string>
 </resources>
