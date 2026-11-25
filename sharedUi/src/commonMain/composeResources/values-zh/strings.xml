@@ -214,4 +214,15 @@
     <string name="connect_app_desktop">BitChord Windows 版</string>
     <string name="connect_this_computer">%1$s（本电脑）</string>
     <string name="connect_this_computer_output">本电脑的音频输出</string>
+    <string name="add_to_queue">添加到播放队列</string>
+    <string name="queue_selected_count">已选择 %1$d 项</string>
+    <string name="queue_select_all">全选</string>
+    <string name="queue_select">选择</string>
+    <string name="queue_close_selection">关闭选择模式</string>
+    <string name="queue_add_to_playlist">播放列表</string>
+    <string name="queue_download">下载</string>
+    <string name="queue_selection_remove">移除</string>
+    <string name="queue_add_all_to_playlist">全部添加到播放列表</string>
+    <string name="mixes_yours">你的混音</string>
+    <string name="mixes_none">暂无混音。继续收听，YouTube Music 会为你生成混音。</string>
 </resources>

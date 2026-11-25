@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.music.bitchord.data.stats.ArtistFacts
+import com.music.bitchord.data.stats.ListeningStats
 import com.music.bitchord.gateway.GatewayStats
 import com.music.bitchord.data.stats.ReplayPeriod
 import com.music.bitchord.data.stats.ReplaySummary
@@ -16,6 +17,8 @@ import com.music.bitchord.R
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.withContext
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -54,10 +57,18 @@ class ReplayState(
  *   costing a file merge on every cold start for a page most launches never
  *   open. It also means reopening Replay re-reads: whatever has been played
  *   since is on it.
+ * @param pageOpen whether the Replay page is open (on the stack, or showing
+ *   its stories or share sheet). Only there can a tab other than Lifetime be
+ *   picked: everywhere else, the Library cards above all, the period is
+ *   Lifetime, and the page opens on Lifetime again each time.
  */
 @Composable
-fun rememberReplayState(active: Boolean): Pair<ReplayState, (ReplayPeriod) -> Unit> {
-    var period by rememberSaveable { mutableStateOf(ReplayPeriod.THIS_YEAR) }
+fun rememberReplayState(active: Boolean, pageOpen: Boolean): Pair<ReplayState, (ReplayPeriod) -> Unit> {
+    var picked by rememberSaveable { mutableStateOf(ReplayPeriod.ALL_TIME) }
+    LaunchedEffect(pageOpen) { if (!pageOpen) picked = ReplayPeriod.ALL_TIME }
+    // Read straight off [pageOpen] rather than waiting for the reset above, so
+    // the frame the page closes on already asks for Lifetime.
+    val period = if (pageOpen) picked else ReplayPeriod.ALL_TIME
     var summary by remember { mutableStateOf<ReplaySummary?>(null) }
     var loading by remember { mutableStateOf(true) }
     var memberSince by remember { mutableStateOf<String?>(null) }
@@ -88,13 +99,18 @@ fun rememberReplayState(active: Boolean): Pair<ReplayState, (ReplayPeriod) -> Un
         // with the Replay closed. `collectLatest` gives the debounce for free —
         // a burst of lookups cancels each pending delay and only the last one
         // gets as far as a rebuild.
-        ArtistFacts.revision.drop(1).collectLatest {
+        // So do other devices' months, when a sync brings newer ones down.
+        merge(ArtistFacts.revision.drop(1), ListeningStats.peerRevision.drop(1)).collectLatest {
             delay(SETTLE_MILLIS)
             summary = GatewayStats.replaySummary(period)
         }
     }
-    return ReplayState(period, summary, loading, memberSince) to
-        { next: ReplayPeriod -> period = next }
+    // The page keeps the last tab's charts up while the next one is read (see
+    // above). Outside it they would be the wrong numbers: the tab the page was
+    // left on, shown on the Library's Lifetime cards until Lifetime arrives.
+    val shown = summary?.takeIf { pageOpen || it.period == period }
+    return ReplayState(period, shown, loading || (summary != null && shown == null), memberSince) to
+        { next: ReplayPeriod -> picked = next }
 }
 
 /** How long a burst of artist lookups is allowed to settle before a rebuild. */

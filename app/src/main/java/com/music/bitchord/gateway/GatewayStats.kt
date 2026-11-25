@@ -4,9 +4,11 @@ import android.content.Context
 import android.os.SystemClock
 import android.util.Log
 import com.music.bitchord.data.stats.ArtistFacts
+import com.music.bitchord.data.stats.DayStats
 import com.music.bitchord.data.stats.ListeningStats
 import com.music.bitchord.data.stats.NameEntry
 import com.music.bitchord.data.stats.ReplayPeriod
+import com.music.bitchord.data.stats.ReplayYearData
 import com.music.bitchord.data.stats.ReplaySummary
 import com.music.bitchord.data.stats.StoredBucket
 import com.music.bitchord.data.stats.TrackEntry
@@ -111,6 +113,28 @@ object GatewayStats {
             since?.let { YearMonth.from(local(it)) }
         } else {
             withContext(Dispatchers.IO) { ListeningStats.months().firstOrNull() }
+        }
+
+    /**
+     * The Replay year story's [year]: from the gateway when signed in, from this
+     * device otherwise. Not memoised, as upstream's isn't: it is read once each
+     * time the story's button appears.
+     */
+    suspend fun replayYear(year: Int): ReplayYearData =
+        if (!Gateway.signedIn) {
+            ListeningStats.year(year)
+        } else {
+            val all = allEvents()
+            withContext(Dispatchers.Default) {
+                val zone = ZoneId.systemDefault()
+                val byMonth = all.groupBy { YearMonth.from(Instant.ofEpochMilli(it.startTime).atZone(zone)) }
+                    .filterKeys { it.year == year }
+                // Built afresh on each ask: the year's merge absorbs entries into
+                // each other, and the busiest-day lookup reads a month again after it.
+                ListeningStats.yearOf(year, byMonth.keys.sorted()) { month ->
+                    gatewayBuckets(byMonth[month].orEmpty(), zone)
+                }
+            }
         }
 
     private suspend fun summary(period: ReplayPeriod): ReplaySummary = withContext(Dispatchers.Default) {
@@ -301,6 +325,12 @@ private fun bucket(month: YearMonth, monthEvents: List<ListeningEvent>, zone: Zo
         val at = Instant.ofEpochMilli(event.startTime).atZone(zone)
         hours[at.hour] += ms
         days[at.dayOfMonth] = (days[at.dayOfMonth] ?: 0L) + ms
+        // Per track too, as the local Replay keeps it: the year story finds the
+        // song that carried the busiest day from these.
+        track.days.getOrPut(at.toLocalDate().toString()) { DayStats() }.apply {
+            this.ms += ms
+            plays++
+        }
     }
     return StoredBucket(
         month = month.toString(),

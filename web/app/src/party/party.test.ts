@@ -99,6 +99,10 @@ describe('AutoPlay supplier', () => {
     connected,
     joinedAtMs: 0,
     lastSeenMs: 0,
+    role: 'speaker',
+    deviceKey: null,
+    app: null,
+    deviceName: null,
   });
 
   it('is the host while connected, else the lowest connected member', () => {

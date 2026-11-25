@@ -214,4 +214,15 @@
     <string name="connect_app_desktop">BitChord para Windows</string>
     <string name="connect_this_computer">%1$s (este computador)</string>
     <string name="connect_this_computer_output">Saída de áudio deste computador</string>
+    <string name="add_to_queue">Adicionar à fila</string>
+    <string name="queue_selected_count">Selecionadas: %1$d</string>
+    <string name="queue_select_all">Selecionar tudo</string>
+    <string name="queue_select">Selecionar</string>
+    <string name="queue_close_selection">Fechar seleção</string>
+    <string name="queue_add_to_playlist">Playlist</string>
+    <string name="queue_download">Baixar</string>
+    <string name="queue_selection_remove">Remover</string>
+    <string name="queue_add_all_to_playlist">Adicionar todas à playlist</string>
+    <string name="mixes_yours">Seus mixes</string>
+    <string name="mixes_none">Ainda não há mixes. Continue ouvindo e o YouTube Music criará alguns para você.</string>
 </resources>

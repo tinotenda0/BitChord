@@ -214,4 +214,15 @@
     <string name="connect_app_desktop">BitChord cho Windows</string>
     <string name="connect_this_computer">%1$s (máy tính này)</string>
     <string name="connect_this_computer_output">Đầu ra âm thanh của máy tính này</string>
+    <string name="add_to_queue">Thêm vào hàng đợi</string>
+    <string name="queue_selected_count">Đã chọn %1$d</string>
+    <string name="queue_select_all">Chọn tất cả</string>
+    <string name="queue_select">Chọn</string>
+    <string name="queue_close_selection">Đóng chế độ chọn</string>
+    <string name="queue_add_to_playlist">Danh sách phát</string>
+    <string name="queue_download">Tải xuống</string>
+    <string name="queue_selection_remove">Xóa</string>
+    <string name="queue_add_all_to_playlist">Thêm tất cả vào danh sách phát</string>
+    <string name="mixes_yours">Mix của bạn</string>
+    <string name="mixes_none">Chưa có mix nào. Hãy tiếp tục nghe và YouTube Music sẽ tạo mix cho bạn.</string>
 </resources>
