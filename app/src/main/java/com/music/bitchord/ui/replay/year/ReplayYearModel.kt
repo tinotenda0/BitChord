@@ -206,7 +206,11 @@ fun rememberReplayYear(active: Boolean): ReplayYear? {
     var year by remember { mutableStateOf<ReplayYear?>(null) }
     LaunchedEffect(active) {
         if (!active) return@LaunchedEffect
-        val shown = ReplayYear.yearShown(LocalDate.now()) ?: run { year = null; return@LaunchedEffect }
+        // Preview only, dev builds: November shows the story too, for a look before December.
+        val today = LocalDate.now()
+        val preview = com.music.bitchord.BuildConfig.FLAVOR == "dev" && today.month == Month.NOVEMBER
+        val shown = (if (preview) today.year else ReplayYear.yearShown(today))
+            ?: run { year = null; return@LaunchedEffect }
         delay(HOME_SETTLE_MS)
         // Fork: from the gateway's log when signed in to it, as the rest of the Replay is.
         val data = com.music.bitchord.gateway.GatewayStats.replayYear(shown)
